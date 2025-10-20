@@ -14,7 +14,7 @@ VITALDB_DATA_URL = "https://api.vitaldb.net/cases"
 VITALDB_TRACKS_URL = "https://api.vitaldb.net/trks"
 
 PPG_SIGNAL_NAME = 'SNUADC/PLETH'
-SAMPLE_RATE_HZ = 100
+SAMPLE_RATE_HZ = 500
 WINDOW_DURATION_SECONDS = 30
 SAMPLES_PER_WINDOW = SAMPLE_RATE_HZ * WINDOW_DURATION_SECONDS
 VALID_WINDOW_MINUTES = 8  # +/- window around 'opstart' for BG stability
@@ -125,6 +125,9 @@ for caseid in caseids_to_process:
 
         # Extract hand-engineered features
         features = extract_ppg_features(ppg_window, SAMPLE_RATE_HZ)
+
+        if all(v == 0 for v in features.values()):
+            continue
 
         row = {
             'caseid': caseid,
