@@ -15,10 +15,10 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers
 
 # ---- CONFIG ----
-FILTERED_FILE = './processed_data/vitaldb_ppg_extracted_features.csv'
+FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features.csv'
 CASEID_COL = 'caseid'
 TARGET_COL = 'preop_gluc'
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 EPOCHS = 80
 LEARNING_RATE = 1e-3
 DROPOUT = 0.2
@@ -184,7 +184,7 @@ plt.legend(); plt.tight_layout(); plt.show()
 print(f"Scatter plot trendline slope: {slope:.2f}")
 
 # Save TensorFlow model weights
-save_path = './dnn_model2.weights.h5'
+save_path = './dnn_model3.weights.h5'
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 model.save_weights(save_path)
 print(f"Model weights saved to {save_path}")
