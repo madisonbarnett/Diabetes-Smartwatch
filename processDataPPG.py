@@ -106,8 +106,8 @@ df_cases = pd.read_csv(VITALDB_DATA_URL)
 df_trks = pd.read_csv(VITALDB_TRACKS_URL)
 
 # Filter for cases with demographic data
-all_data_cases = df_cases[df_cases['age'].notna()].copy()
-caseids_to_process = list(all_data_cases['caseid'].unique())
+bg_data_cases = df_cases[df_cases['preop_gluc'].notna() & df_cases['age'].notna()].copy()
+caseids_to_process = list(bg_data_cases['caseid'].unique())
 
 print(f"Found {len(caseids_to_process)} cases with relevant data to process.")
 
@@ -156,7 +156,7 @@ for caseid in caseids_to_process:
     ppg_signal = ppg_vals[:, 0]
 
     # Get metadata for the current case
-    case_meta = all_data_cases[all_data_cases['caseid'] == caseid].iloc[0]
+    case_meta = bg_data_cases[bg_data_cases['caseid'] == caseid].iloc[0]
 
     # Filter both signals within the valid time window around 'opstart' for BG stability
     opstart_seconds = case_meta['opstart']
