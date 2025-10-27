@@ -5,12 +5,12 @@ import os
 from scipy.signal import find_peaks, butter, lfilter, filtfilt
 from scipy.stats import entropy
 
-# This script extracts ECG, PPG, BG, and BP
+# This script extracts PPG, BG, and BP (NO ECG DATA)
 
 # --- CONFIGURATION ---
 OUTPUT_DIR = "./processed_data"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "vitaldb_ppg_ecg_extracted_features.csv")
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, "vitaldb_ppg_extracted_features.csv")
 
 VITALDB_DATA_URL = "https://api.vitaldb.net/cases"
 VITALDB_TRACKS_URL = "https://api.vitaldb.net/trks"
@@ -97,46 +97,6 @@ def extract_ppg_features(ppg_series, fs):
 
     return features
 
-def extract_ecg_features(ecg_series, fs):
-    """
-    Extracts a set of robust, hand-engineered features from a single ECG signal window.
-    """
-    features = {}
-
-    # Clean the data: remove NaN values
-    ecg_series_clean = ecg_series[np.isfinite(ecg_series)]
-
-    if ecg_series_clean.size == 0:
-        return {
-            'ecg_mean': 0, 'ecg_std': 0, 'ecg_mean_pp_interval_s': 0,
-            'ecg_std_pp_interval_s': 0, 'ecg_freq': 0, 'ecg_auc': 0,
-            'ecg_first_deriv_max': 0, 'ecg_first_deriv_min': 0, 'ecg_entropy': 0
-        }
-
-    features['ecg_mean'] = np.mean(ecg_series_clean)
-    features['ecg_std'] = np.std(ecg_series_clean)
-
-    peaks, _ = find_peaks(ecg_series_clean, distance=50, height=0)
-    if len(peaks) > 1:
-        pp_intervals = np.diff(peaks)
-        features['ecg_mean_pp_interval_s'] = np.mean(pp_intervals) / fs
-        features['ecg_std_pp_interval_s'] = np.std(pp_intervals) / fs
-        features['ecg_freq'] = fs / np.mean(pp_intervals)
-    else:
-        features['ecg_mean_pp_interval_s'] = 0
-        features['ecg_std_pp_interval_s'] = 0
-        features['ecg_freq'] = 0
-
-    features['ecg_auc'] = np.trapezoid(ecg_series_clean)
-
-    derivative = np.diff(ecg_series_clean)
-    features['ecg_first_deriv_max'] = np.max(derivative)
-    features['ecg_first_deriv_min'] = np.min(derivative)
-
-    hist, _ = np.histogram(ecg_series_clean, bins='auto')
-    features['ecg_entropy'] = entropy(hist)
-
-    return features
 
 # --- MAIN DATA PROCESSING LOOP ---
 print("Starting data processing...")
@@ -195,15 +155,6 @@ for caseid in caseids_to_process:
 
     ppg_signal = ppg_vals[:, 0]
 
-    # Load raw ECG signal for the case
-    ecg_vals = vitaldb.load_case(caseid, [ECG_SIGNAL_NAME], 1/SAMPLE_RATE_HZ)
-
-    if ecg_vals is None or ecg_vals.size == 0:
-        print(f"  No ECG data found for Case ID {caseid}. Skipping.")
-        continue
-
-    ecg_signal = ecg_vals[:, 0]
-
     # Get metadata for the current case
     case_meta = all_data_cases[all_data_cases['caseid'] == caseid].iloc[0]
 
@@ -253,19 +204,7 @@ for caseid in caseids_to_process:
     # Apply bandpass filter to the entire windowed signal to remove noise
     filtered_ppg_signal = butter_bandpass_filter(windowed_ppg_signal, lowcut=0.5, highcut=8, fs=SAMPLE_RATE_HZ)
 
-    # Resample end index for ecg signal
-    end_idx = min(len(ecg_signal), int((opstart_seconds + VALID_WINDOW_MINUTES * 60) * SAMPLE_RATE_HZ))
-
-    windowed_ecg_signal = ecg_signal[start_idx:end_idx]
-
-    if len(windowed_ecg_signal) < SAMPLES_PER_WINDOW:
-        print(f"  ECG signal for Case ID {caseid} is too short. Skipping.")
-        continue
-
-    # Apply bandpass filter to the entire windowed signal to remove noise
-    filtered_ecg_signal = butter_bandpass_filter(windowed_ecg_signal, lowcut=0.5, highcut=8, fs=SAMPLE_RATE_HZ)
-
-    sampleLen = min(len(filtered_ppg_signal), len(filtered_ecg_signal))
+    sampleLen = len(filtered_ppg_signal)
 
     # Process and save windows for the current case
     case_data = []
@@ -279,15 +218,6 @@ for caseid in caseids_to_process:
         if all(v == 0 for v in ppg_features.values()):
             continue
 
-        ecg_window = filtered_ecg_signal[i:i + SAMPLES_PER_WINDOW]
-
-        # Extract hand-engineered features
-        ecg_features = extract_ecg_features(ecg_window, SAMPLE_RATE_HZ)
-
-        # Skip samples where ECG is null or infinite (as returned by extract_ecg_features function)
-        if all(v == 0 for v in ecg_features.values()):
-            continue
-        
         # Restructure indexing for BP samples
         j = int(i / (SAMPLES_PER_WINDOW / BP_SAMPLES_PER_WINDOW))
 
@@ -321,8 +251,7 @@ for caseid in caseids_to_process:
             'preop_dm': case_meta['preop_dm'],
             'weight': case_meta['weight'],
             'height': case_meta['height'],
-            **ppg_features, # Unpack the extracted PPG features
-            **ecg_features # Unpack the extracted ECG features
+            **ppg_features # Unpack the extracted PPG features
         }
         case_data.append(row)
 
