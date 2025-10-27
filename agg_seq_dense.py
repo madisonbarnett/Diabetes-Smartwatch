@@ -7,16 +7,18 @@ import tensorflow as tf
 from tensorflow.keras import layers, models
 
 # Config
-FILTERED_FILE = './processed_data/vitaldb_ppg_extracted_features_1.csv'
-EPOCHS = 80
-BATCH_SIZE = 32
+FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features.csv'
+EPOCHS = 1
+BATCH_SIZE = 16
 
 # Load CSV file
 df = pd.read_csv(FILTERED_FILE)
 
 # Define features
 sequential_features = ['ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
-                       'ppg_freq', 'auc', 'first_deriv_max', 'first_deriv_min', 'entropy']
+                       'ppg_freq', 'auc', 'first_deriv_max', 'first_deriv_min', 'entropy',
+                       'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s', 
+                       'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min', 'ecg_entropy']
 static_features = ['age', 'sex', 'preop_dm', 'weight', 'height']
 target = 'preop_gluc' 
 
