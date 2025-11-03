@@ -185,7 +185,7 @@ plt.legend(); plt.tight_layout(); plt.show()
 print(f"Scatter plot trendline slope: {slope:.2f}")
 
 # Save TensorFlow model weights
-save_path = './dnn_bp_model1.weights.h5'
+save_path = './model_weights/dnn_bp_model1.weights.h5'
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 model.save_weights(save_path)
 print(f"Model weights saved to {save_path}")
