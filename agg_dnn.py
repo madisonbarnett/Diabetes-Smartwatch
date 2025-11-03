@@ -14,11 +14,11 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks, optimizers
 
 # -------------------- CONFIG --------------------
-FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features_30s.csv'
+FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features_10s.csv'
 CASEID_COL    = 'caseid'
 TARGET_COL    = 'preop_gluc'
 
-# sequential features (the ones that vary over time)
+# sequential features (vary over time)
 SEQ_FEATURES = [
     'mean_bp', 'sys_bp', 'dys_bp',
     'ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
@@ -27,15 +27,16 @@ SEQ_FEATURES = [
     'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min', 'ecg_entropy'
 ]
 
-# static covariates (constant per subject)
+# static features
 STATIC_FEATURES = ['age', 'sex', 'preop_dm', 'weight', 'height']
 
 # hyper-parameters
-EPOCHS          = 100
-BATCH_SIZE      = 64
+EPOCHS          = 80
+BATCH_SIZE      = 32
 LEARNING_RATE   = 1e-3
 DROPOUT         = 0.2
-DNN_LAYERS      = [128, 64, 32]
+# DNN_LAYERS      = [128, 64, 32]
+DNN_LAYERS      = [64, 32]
 PATIENCE_ES     = 20
 PATIENCE_LR     = 10
 MIN_DELTA       = 1e-4
@@ -51,7 +52,7 @@ print(f"Raw shape: {df.shape}")
 def aggregate_per_subject(df):
     agg_dict = {f: 'mean' for f in SEQ_FEATURES}
     for f in STATIC_FEATURES + [TARGET_COL]:
-        agg_dict[f] = 'first'                     # static → take any value
+        agg_dict[f] = 'first'                     
     agg_dict[CASEID_COL] = 'first'
 
     agg = df.groupby(CASEID_COL).agg(agg_dict).reset_index(drop=True)
@@ -175,6 +176,98 @@ print(f"MAE  : {mae:6.2f} mg/dL")
 print(f"MAPE : {mape:6.2f} %")
 print(f"R²   : {r2:6.3f}")
 
+# Clarke Error Grid Analysis
+def get_clarke_zone(reference, predicted):
+    if (reference <= 70 and predicted <= 70) or (predicted >= 0.8 * reference and predicted <= 1.2 * reference):
+        return 'A'
+    elif (reference <= 70 and predicted >= 180) or (reference >= 240 and predicted <= 70):
+        return 'E'
+    elif (reference <= 70 and predicted > 70 and predicted < 180) or (reference >= 180 and reference <= 240 and predicted <= 70):
+        return 'D'
+    elif (reference >= 70 and reference <= 180 and predicted >= 180) or (reference >= 240 and predicted > 70 and predicted < 180):
+        return 'C'
+    else:
+        return 'B'
+
+zones_count = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'E': 0}
+total_points = len(y_test_orig)
+points = []  # Store (ref, pred, zone) for plotting
+
+for ref, pred in zip(y_test_orig, y_pred):
+    zone = get_clarke_zone(ref, pred)
+    zones_count[zone] += 1
+    points.append((ref, pred, zone))
+
+print("Clarke Error Grid Analysis:")
+for zone, count in zones_count.items():
+    percentage = (count / total_points) * 100
+    print(f"Zone {zone}: {percentage:.2f}% ({count}/{total_points} points)")
+
+# --- Plotting Clarke Error Grid ---
+plt.figure(figsize=(10, 10))
+
+# Define zone colors
+colors = {'A': 'green', 'B': 'yellow', 'C': 'orange', 'D': 'red', 'E': 'purple'}
+labels = {
+    'A': 'A: Clinically Accurate',
+    'B': 'B: Benign Errors',
+    'C': 'C: Overcorrection',
+    'D': 'D: Dangerous Failure to Detect',
+    'E': 'E: Erroneous Treatment'
+}
+
+# Scatter points by zone
+for zone in 'ABCDE':
+    zone_points = [(r, p) for r, p, z in points if z == zone]
+    if zone_points:
+        refs, preds = zip(*zone_points)
+        plt.scatter(refs, preds, c=colors[zone], label=f"{labels[zone]} ({zones_count[zone]})", alpha=0.7, edgecolors='k', s=60)
+
+# Draw grid boundaries
+max_val = 400
+x = np.linspace(0, max_val, 500)
+
+# Perfect line (y = x)
+plt.plot([0, max_val], [0, max_val], 'k--', linewidth=1, label='Perfect Agreement')
+
+# Zone A boundaries: ±20% or within 70
+plt.fill_between(x, 0.8*x, 1.2*x, where=(x <= 70) | (x >= 70), color='green', alpha=0.1, label='_nolegend_')
+plt.fill_between(x, 0, 70, where=x <= 70, color='green', alpha=0.1)
+
+# Zone B: outside A but safe
+# (We'll let the scatter show this; boundaries are complex)
+
+# Zone C: ref 70-180 → pred >=180; ref >=240 → pred 70-180
+plt.axhspan(180, max_val, xmin=70/400, xmax=180/400, color='orange', alpha=0.1)
+plt.axhspan(70, 180, xmin=240/400, xmax=1, color='orange', alpha=0.1)
+
+# Zone D: ref <=70 & pred 70-180; ref 180-240 & pred <=70
+plt.axhspan(70, 180, xmin=0, xmax=70/400, color='red', alpha=0.1)
+plt.axhspan(0, 70, xmin=180/400, xmax=240/400, color='red', alpha=0.1)
+
+# Zone E: ref <=70 & pred >=180; ref >=240 & pred <=70
+plt.axhspan(180, max_val, xmin=0, xmax=70/400, color='purple', alpha=0.1)
+plt.axhspan(0, 70, xmin=240/400, xmax=1, color='purple', alpha=0.1)
+
+# Axis limits and labels
+plt.xlim(0, max_val)
+plt.ylim(0, max_val)
+plt.xlabel('Reference Glucose (mg/dL)', fontsize=12)
+plt.ylabel('Predicted Glucose (mg/dL)', fontsize=12)
+plt.title('Clarke Error Grid Analysis', fontsize=14)
+plt.grid(True, linestyle='--', alpha=0.5)
+
+# Equal aspect ratio
+plt.gca().set_aspect('equal', adjustable='box')
+
+# Legend
+plt.legend(loc='upper left')
+
+# Show plot
+plt.tight_layout()
+plt.show()
+    
+
 # --------------------------------------------------------------
 # 10. Plots (identical style to dnn.py)
 # --------------------------------------------------------------
@@ -237,6 +330,6 @@ save_dir = './model_weights'
 os.makedirs(save_dir, exist_ok=True)
 
 # model weights
-model.save_weights(save_dir + '/agg_dense.weights.h5')
+model.save_weights(save_dir + '/agg_dense_10s.weights.h5')
 
 print(f"\nModel weights saved to {save_dir}")
