@@ -7,15 +7,15 @@ import tensorflow as tf
 from tensorflow.keras import layers, models
 
 # Config
-FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features.csv'
-EPOCHS = 1
-BATCH_SIZE = 16
+FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features_30s.csv'
+EPOCHS = 80
+BATCH_SIZE = 32
 
 # Load CSV file
 df = pd.read_csv(FILTERED_FILE)
 
 # Define features
-sequential_features = ['ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
+sequential_features = ['mean_bp', 'sys_bp', 'dys_bp', 'ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
                        'ppg_freq', 'auc', 'first_deriv_max', 'first_deriv_min', 'entropy',
                        'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s', 
                        'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min', 'ecg_entropy']
@@ -90,7 +90,7 @@ plt.show()
 
 y_pred = model.predict(X_test)
 plt.scatter(y_test, y_pred, alpha=0.5)
-plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--')
 plt.xlabel('Actual preop_gluc (mg/dL)')
 plt.ylabel('Predicted preop_gluc (mg/dL)')
 plt.title('Predicted vs Actual Blood Glucose')
