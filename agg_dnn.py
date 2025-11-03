@@ -31,8 +31,8 @@ SEQ_FEATURES = [
 STATIC_FEATURES = ['age', 'sex', 'preop_dm', 'weight', 'height']
 
 # hyper-parameters
-EPOCHS          = 80
-BATCH_SIZE      = 32
+EPOCHS          = 1
+BATCH_SIZE      = 16
 LEARNING_RATE   = 1e-3
 DROPOUT         = 0.2
 # DNN_LAYERS      = [128, 64, 32]
@@ -177,17 +177,23 @@ print(f"MAPE : {mape:6.2f} %")
 print(f"R²   : {r2:6.3f}")
 
 # Clarke Error Grid Analysis
-def get_clarke_zone(reference, predicted):
-    if (reference <= 70 and predicted <= 70) or (predicted >= 0.8 * reference and predicted <= 1.2 * reference):
+def get_clarke_zone(ref, pred):
+    # Force numeric (helps when using pandas)
+    r, p = float(ref), float(pred)
+
+    if (r <= 70 and p <= 70) or (0.8*r <= p <= 1.2*r):
         return 'A'
-    elif (reference <= 70 and predicted >= 180) or (reference >= 240 and predicted <= 70):
-        return 'E'
-    elif (reference <= 70 and predicted > 70 and predicted < 180) or (reference >= 180 and reference <= 240 and predicted <= 70):
-        return 'D'
-    elif (reference >= 70 and reference <= 180 and predicted >= 180) or (reference >= 240 and predicted > 70 and predicted < 180):
+
+    if (70 < r <= 180 and p > 180) or (r > 240 and 70 < p <= 180):
         return 'C'
-    else:
-        return 'B'
+
+    if (r <= 70 and 70 < p <= 180) or (180 <= r <= 240 and p <= 70):
+        return 'D'
+
+    if (r <= 70 and p > 180) or (r > 240 and p <= 70):
+        return 'E'
+
+    return 'B'      # everything else
 
 zones_count = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'E': 0}
 total_points = len(y_test_orig)
@@ -235,19 +241,19 @@ plt.fill_between(x, 0.8*x, 1.2*x, where=(x <= 70) | (x >= 70), color='green', al
 plt.fill_between(x, 0, 70, where=x <= 70, color='green', alpha=0.1)
 
 # Zone B: outside A but safe
-# (We'll let the scatter show this; boundaries are complex)
+# Complex boundaries, draw other zones instead
 
-# Zone C: ref 70-180 → pred >=180; ref >=240 → pred 70-180
-plt.axhspan(180, max_val, xmin=70/400, xmax=180/400, color='orange', alpha=0.1)
-plt.axhspan(70, 180, xmin=240/400, xmax=1, color='orange', alpha=0.1)
+# Zone C: 
+plt.fill([70, 70, 290], [180, 400, 400], color='orange', alpha=0.4)
+plt.fill([130, 180, 180], [0, 0, 70], color='orange', alpha=0.4)
 
-# Zone D: ref <=70 & pred 70-180; ref 180-240 & pred <=70
+# Zone D: 
 plt.axhspan(70, 180, xmin=0, xmax=70/400, color='red', alpha=0.1)
-plt.axhspan(0, 70, xmin=180/400, xmax=240/400, color='red', alpha=0.1)
+plt.axhspan(70, 180, xmin=240/400, xmax=1, color='red', alpha=0.1)
 
-# Zone E: ref <=70 & pred >=180; ref >=240 & pred <=70
+# Zone E: 
 plt.axhspan(180, max_val, xmin=0, xmax=70/400, color='purple', alpha=0.1)
-plt.axhspan(0, 70, xmin=240/400, xmax=1, color='purple', alpha=0.1)
+plt.axhspan(0, 70, xmin=180/400, xmax=1, color='purple', alpha=0.1)
 
 # Axis limits and labels
 plt.xlim(0, max_val)
