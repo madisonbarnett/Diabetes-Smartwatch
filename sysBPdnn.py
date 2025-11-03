@@ -1,5 +1,5 @@
 ''' Code provided by Isaac Arnold, updated by Tyler Bish '''
-''' 10/21/2025 '''
+''' 11/1/2025 '''
 import pandas as pd
 import numpy as np
 # import torch
@@ -15,11 +15,12 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers
 
 # ---- CONFIG ----
-FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_bp_extracted_features.csv'
+FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv'
 CASEID_COL = 'caseid'
-TARGET_COL = 'sys_bp' # systolic blood pressure
-BATCH_SIZE = 16
-EPOCHS = 80
+TARGET_COL = 'sys_bp'
+EXCLUDED_COL = [CASEID_COL, TARGET_COL, 'preop_gluc', 'mean_bp', 'dys_bp', 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s', 'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min', 'ecg_entropy']
+BATCH_SIZE = 32
+EPOCHS = 100
 LEARNING_RATE = 1e-3
 DROPOUT = 0.2
 DNN_LAYERS = [128, 64, 32]
@@ -32,7 +33,7 @@ df = df.dropna()
 print(f"Loaded shape: {df.shape}")
 
 # ----- Feature/target selection -----
-features_to_use = [col for col in df.columns if col not in [CASEID_COL, TARGET_COL]]
+features_to_use = [col for col in df.columns if col not in EXCLUDED_COL]
 X = df[features_to_use].values.astype(np.float32)
 y = df[TARGET_COL].values.astype(np.float32)
 caseids = df[CASEID_COL].values
@@ -158,7 +159,7 @@ y_pred = y_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
 # Compute metrics
 mae = mean_absolute_error(y_test_orig, y_pred)
 mape = mean_absolute_percentage_error(y_test_orig, y_pred) * 100
-print(f"\nTest MAE: {mae:.2f} mg/dL")
+print(f"\nTest MAE: {mae:.2f} mmHG")
 print(f"Test MAPE: {mape:.2f}%")
 
 # ----- Plots -----
@@ -177,14 +178,14 @@ plt.plot([y_test_orig.min(), y_test_orig.max()], [y_test_orig.min(), y_test_orig
 plt.plot([y_test_orig.min(), y_test_orig.max()],
          [slope * y_test_orig.min() + intercept, slope * y_test_orig.max() + intercept],
          color='red', lw=2, label=f'Trendline (slope={slope:.2f})')
-plt.xlabel("Actual BG (mg/dL)")
-plt.ylabel("Predicted BG (mg/dL)")
-plt.title("Actual vs. Predicted BG (TensorFlow DNN)")
+plt.xlabel("Actual Systolic BP (mmHG)")
+plt.ylabel("Predicted Systolic BP (mmHG)")
+plt.title("Actual vs. Predicted Systolic BP (TensorFlow DNN)")
 plt.legend(); plt.tight_layout(); plt.show()
 print(f"Scatter plot trendline slope: {slope:.2f}")
 
 # Save TensorFlow model weights
-save_path = './sysBPdnn_model1.weights.h5'
+save_path = './dnn_bp_model1.weights.h5'
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 model.save_weights(save_path)
 print(f"Model weights saved to {save_path}")
