@@ -1,5 +1,3 @@
-''' Code provided by Isaac Arnold, updated by Hunter Enders '''
-''' 10/17/2025 '''
 import pandas as pd
 import numpy as np
 # import torch
