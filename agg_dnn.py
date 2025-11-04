@@ -31,7 +31,7 @@ SEQ_FEATURES = [
 STATIC_FEATURES = ['age', 'sex', 'preop_dm', 'weight', 'height']
 
 # hyper-parameters
-EPOCHS          = 1
+EPOCHS          = 50
 BATCH_SIZE      = 16
 LEARNING_RATE   = 1e-3
 DROPOUT         = 0.2
@@ -248,12 +248,18 @@ plt.fill([70, 70, 290], [180, 400, 400], color='orange', alpha=0.4)
 plt.fill([130, 180, 180], [0, 0, 70], color='orange', alpha=0.4)
 
 # Zone D: 
-plt.axhspan(70, 180, xmin=0, xmax=70/400, color='red', alpha=0.1)
-plt.axhspan(70, 180, xmin=240/400, xmax=1, color='red', alpha=0.1)
+# x: left, right, right, left
+# y: bottom, bottom, top, top
+
+plt.fill([0, 70, 70, 0], [70, 70, 180, 180], color='red', alpha=0.1)
+plt.fill([240, 400, 400, 240], [70, 70, 180, 180], color='red', alpha=0.1)
 
 # Zone E: 
-plt.axhspan(180, max_val, xmin=0, xmax=70/400, color='purple', alpha=0.1)
-plt.axhspan(0, 70, xmin=180/400, xmax=1, color='purple', alpha=0.1)
+# plt.axhspan(180, max_val, xmin=0, xmax=70/400, color='purple', alpha=0.1)
+# plt.axhspan(0, 70, xmin=180/400, xmax=1, color='purple', alpha=0.1)
+
+plt.fill([0, 70, 70, 0], [180, 180, 400, 400], color='purple', alpha=0.1)
+plt.fill([180, 400, 400, 180], [0, 0, 70, 70], color='purple', alpha=0.1)
 
 # Axis limits and labels
 plt.xlim(0, max_val)
