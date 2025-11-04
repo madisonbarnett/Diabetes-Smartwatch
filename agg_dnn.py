@@ -184,13 +184,13 @@ def get_clarke_zone(ref, pred):
     if (r <= 70 and p <= 70) or (0.8*r <= p <= 1.2*r):
         return 'A'
 
-    if (70 < r <= 180 and p > 180) or (r > 240 and 70 < p <= 180):
+    if (130 < r <= 180 and 1.4*(r-130) >= p) or (70 < r <= 280 and p >= (r+110)):
         return 'C'
 
-    if (r <= 70 and 70 < p <= 180) or (180 <= r <= 240 and p <= 70):
+    if (r <= 70 and 70 < p <= 180) or (r >= 240 and 70 <= p <= 180):
         return 'D'
 
-    if (r <= 70 and p > 180) or (r > 240 and p <= 70):
+    if (r <= 70 and p > 180) or (r > 180 and p <= 70):
         return 'E'
 
     return 'B'      # everything else
