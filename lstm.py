@@ -1,7 +1,9 @@
 # --------------------------------------------------------------
-#  vitaldb_glucose_lstm_full.py
-#  LSTM + static-merge + full evaluation (Clarke, plots, etc.)
+#  lstm_improved.py
+#  LSTM + Static Repeat + Bidir + MAE + Log(Target) + Stratified
+#  Full evaluation: Clarke, plots, metrics
 # --------------------------------------------------------------
+
 import os
 import numpy as np
 import pandas as pd
@@ -13,298 +15,354 @@ from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error,
 
 import tensorflow as tf
 from tensorflow.keras import layers, Model, callbacks
+from pathlib import Path
 
 # --------------------------------------------------------------
 # 1. CONFIG
 # --------------------------------------------------------------
-FILTERED_FILE = "./processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv"   # <-- change if needed
+FILTERED_FILE = "./processed_data/vitaldb_ppg_ecg_extracted_features_15s_nonlin.csv"
 CASEID_COL    = "caseid"
 TARGET_COL    = "preop_gluc"
 
-# static features (constant per subject)
 STATIC_COLS   = ["age", "sex", "preop_dm", "weight", "height"]
 
-# hyper-parameters
-LSTM_UNITS    = 64
-DENSE_UNITS   = 32
-DROPOUT       = 0.2
+# Hyper-parameters
+MAX_T         = 64
+LSTM_UNITS    = 32          # smaller → less overfit
+DENSE_UNITS   = 16
+DROPOUT       = 0.5         # heavy
 BATCH_SIZE    = 64
-EPOCHS        = 200
-PATIENCE_ES   = 15
-PATIENCE_LR   = 7
+EPOCHS        = 300
+PATIENCE_ES   = 25
+PATIENCE_LR   = 10
 SEED          = 42
 
 tf.random.set_seed(SEED)
 np.random.seed(SEED)
 
 # --------------------------------------------------------------
-# 2. LOAD & GROUP BY SUBJECT
+# 2. LOAD DATA
 # --------------------------------------------------------------
-print("Loading data …")
+print("Loading data...")
 df = pd.read_csv(FILTERED_FILE).dropna()
-print(f"Raw rows: {df.shape[0]}")
+print(f"Raw rows: {df.shape[0]}, subjects: {df[CASEID_COL].nunique()}")
 
-# sanity – target must be constant per caseid
+# Sanity
 assert df.groupby(CASEID_COL)[TARGET_COL].nunique().max() == 1
 
 dynamic_cols = [c for c in df.columns if c not in (CASEID_COL, TARGET_COL, *STATIC_COLS)]
 static_cols  = STATIC_COLS
 
-print(f"Dynamic features : {len(dynamic_cols)}")
-print(f"Static  features : {len(static_cols)}")
+print(f"Dynamic: {len(dynamic_cols)}, Static: {len(static_cols)}")
 
+# --------------------------------------------------------------
+# 3. LOG-TRANSFORM TARGET
+# --------------------------------------------------------------
+df['log_gluc'] = np.log1p(df[TARGET_COL])
+
+# --------------------------------------------------------------
+# 4. BUILD (X_dyn, X_stat, y_log) WITH PADDING + PER-SUBJECT Z-SCORE
+# --------------------------------------------------------------
 subjects = df[CASEID_COL].unique()
 n_subj   = len(subjects)
-
-# 64 rows per subject → T = 64
-T = df.groupby(CASEID_COL).size().max()
-assert T == 64, f"Expected 64 rows per subject, got {T}"
 D = len(dynamic_cols)
 S = len(static_cols)
 
-X_dyn  = np.zeros((n_subj, T, D), dtype=np.float32)
+X_dyn  = np.zeros((n_subj, MAX_T, D), dtype=np.float32)
 X_stat = np.zeros((n_subj, S), dtype=np.float32)
-y      = np.zeros((n_subj, 1), dtype=np.float32)
+y_log  = np.zeros((n_subj, 1), dtype=np.float32)
 
+print("Padding + per-subject z-scoring...")
 for i, subj in enumerate(subjects):
-    sub_df = df[df[CASEID_COL] == subj].sort_values(by=CASEID_COL)  # any order ok
-    X_dyn[i]   = sub_df[dynamic_cols].values
-    X_stat[i]  = sub_df[static_cols].iloc[0].values
-    y[i]       = sub_df[TARGET_COL].iloc[0]
+    sub_df = df[df[CASEID_COL] == subj]
+    seq = sub_df[dynamic_cols].values.astype(np.float32)
+
+    # --- Per-subject z-score ---
+    mean_seq = seq.mean(axis=0, keepdims=True)
+    std_seq  = seq.std(axis=0, keepdims=True) + 1e-8
+    seq = (seq - mean_seq) / std_seq
+
+    # --- Pad ---
+    if len(seq) >= MAX_T:
+        seq = seq[:MAX_T]
+    else:
+        pad_width = MAX_T - len(seq)
+        seq = np.pad(seq, ((0, pad_width), (0, 0)), mode='constant', constant_values=0)
+
+    X_dyn[i] = seq
+    X_stat[i] = sub_df[static_cols].iloc[0].values
+    y_log[i] = sub_df['log_gluc'].iloc[0]
+
+real_lengths = np.sum(np.any(X_dyn != 0, axis=-1), axis=1)
+print(f"Real lengths → min: {real_lengths.min()}, mean: {real_lengths.mean():.1f}")
 
 # --------------------------------------------------------------
-# 3. SUBJECT-LEVEL SPLIT
+# 5. STRATIFIED SUBJECT SPLIT (by glucose bins)
 # --------------------------------------------------------------
-train_ids, test_ids = train_test_split(subjects, test_size=0.20, random_state=SEED)
+bins = pd.qcut(df.groupby(CASEID_COL)[TARGET_COL].first(), q=5, duplicates='drop')
+strata = df.groupby(CASEID_COL).ngroup().map(dict(enumerate(bins.cat.codes)))
+
+train_ids, test_ids = train_test_split(
+    subjects, test_size=0.20, random_state=SEED, stratify=strata.loc[subjects]
+)
 train_mask = np.isin(subjects, train_ids)
 
 X_dyn_train, X_dyn_test   = X_dyn[train_mask], X_dyn[~train_mask]
 X_stat_train, X_stat_test = X_stat[train_mask], X_stat[~train_mask]
-y_train, y_test           = y[train_mask], y[~train_mask]
+y_log_train, y_log_test   = y_log[train_mask], y_log[~train_mask]
+y_orig_train = np.expm1(y_log_train).flatten()
+y_orig_test  = np.expm1(y_log_test).flatten()
 
-print(f"Train subjects: {X_dyn_train.shape[0]}, Test: {X_dyn_test.shape[0]}")
+print(f"Train: {X_dyn_train.shape[0]}, Test: {X_dyn_test.shape[0]}")
 
 # --------------------------------------------------------------
-# 4. SCALING (fit on train only)
+# 6. SCALING (static only — dynamic already z-scored)
 # --------------------------------------------------------------
-# dynamic
-scaler_dyn = StandardScaler()
-n_tr, T_tr, D_tr = X_dyn_train.shape
-X_dyn_train = scaler_dyn.fit_transform(X_dyn_train.reshape(-1, D_tr)).reshape(n_tr, T_tr, D_tr)
-X_dyn_test  = scaler_dyn.transform(X_dyn_test.reshape(-1, D_tr)).reshape(-1, T, D_tr)
-
-# static
 scaler_stat = StandardScaler()
 X_stat_train = scaler_stat.fit_transform(X_stat_train)
 X_stat_test  = scaler_stat.transform(X_stat_test)
 
-# target
-scaler_y = StandardScaler()
-y_train_s = scaler_y.fit_transform(y_train)
-y_test_s  = scaler_y.transform(y_test)
-
-# keep original for reporting
-y_train_orig, y_test_orig = y_train.copy().flatten(), y_test.copy().flatten()
+# Log target already scaled → no StandardScaler needed
+y_train_s = y_log_train
+y_test_s  = y_log_test
 
 # --------------------------------------------------------------
-# 5. MODEL
+# 7. MODEL: Bidir LSTM + Static Repeat + Attention
 # --------------------------------------------------------------
-def build_lstm(timesteps, dyn_features, static_features):
-    # ---- dynamic -------------------------------------------------
-    dyn_in = layers.Input(shape=(timesteps, dyn_features), name="dyn")
-    x = layers.Masking(mask_value=0.0)(dyn_in)                 # safety
-    x = layers.LSTM(LSTM_UNITS,
+def build_model(timesteps, n_dyn, n_stat):
+    # Inputs
+    dyn_in  = layers.Input(shape=(timesteps, n_dyn), name="dyn")
+    stat_in = layers.Input(shape=(n_stat,), name="stat")
+
+    # Repeat static across time
+    stat_rep = layers.RepeatVector(timesteps)(stat_in)           # (B, T, S)
+
+    # Concatenate
+    x = layers.Concatenate(axis=-1)([dyn_in, stat_rep])          # (B, T, D+S)
+    x = layers.Masking(mask_value=0.0)(x)
+
+    # Bidirectional LSTM
+    x = layers.Bidirectional(
+        layers.LSTM(LSTM_UNITS,
                     dropout=DROPOUT,
                     recurrent_dropout=DROPOUT,
-                    return_sequences=False)(x)         # (batch, LSTM_UNITS)
+                    return_sequences=True)
+    )(x)                                                         # (B, T, 2*units)
 
-    # ---- static --------------------------------------------------
-    stat_in = layers.Input(shape=(static_features,), name="stat")
-    s = layers.Dense(DENSE_UNITS, activation="relu")(stat_in)
-    s = layers.Dropout(DROPOUT)(s)
+    avg_pool = layers.GlobalAveragePooling1D()(x)
+    max_pool = layers.GlobalMaxPooling1D()(x)
+    x = layers.Concatenate()([avg_pool, max_pool])
 
-    # ---- merge ---------------------------------------------------
-    merged = layers.Concatenate()([x, s])
-    merged = layers.Dense(64, activation="relu")(merged)
-    merged = layers.Dropout(DROPOUT)(merged)
+    # Head
+    x = layers.Dense(DENSE_UNITS, activation="relu")(x)
+    x = layers.Dropout(DROPOUT)(x)
+    out = layers.Dense(1, activation="linear")(x)
 
-    out = layers.Dense(1, activation="linear", name="glucose")(merged)
-
-    model = Model(inputs=[dyn_in, stat_in], outputs=out)
-    model.compile(optimizer="adam", loss="mse", metrics=["mae"])
+    model = Model([dyn_in, stat_in], out)
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(clipnorm=1.0),
+        loss="mae",
+        metrics=["mae"]
+    )
     return model
 
-model = build_lstm(timesteps=T, dyn_features=D, static_features=S)
+model = build_model(MAX_T, D, S)
 model.summary()
 
 # --------------------------------------------------------------
-# 6. CALLBACKS
+# 8. CALLBACKS
 # --------------------------------------------------------------
+# log_dir = Path("./tb_logs/lstm_improved")
+# log_dir.mkdir(exist_ok=True, parents=True)
+
+# cb_tb = callbacks.TensorBoard(log_dir=str(log_dir), histogram_freq=1)
 cb_es = callbacks.EarlyStopping(monitor="val_mae", patience=PATIENCE_ES,
                                 restore_best_weights=True, min_delta=1e-4)
-cb_lr = callbacks.ReduceLROnPlateau(monitor="val_mae", factor=0.5,
-                                    patience=PATIENCE_LR, min_lr=1e-7)
+cb_lr = callbacks.ReduceLROnPlateau(monitor="val_mae", factor=0.3,
+                                    patience=PATIENCE_LR, min_lr=1e-6)
+# cb_cp = callbacks.ModelCheckpoint(
+#     filepath=str(log_dir / "best_model.h5"),
+#     monitor="val_mae", save_best_only=True, save_weights_only=False
+# )
 
 # --------------------------------------------------------------
-# 7. TRAIN
+# 9. TRAIN
 # --------------------------------------------------------------
 history = model.fit(
-    [X_dyn_train, X_stat_train], y_train_s,
+    x=[X_dyn_train, X_stat_train],
+    y=y_train_s,
     validation_data=([X_dyn_test, X_stat_test], y_test_s),
     epochs=EPOCHS,
     batch_size=BATCH_SIZE,
+    shuffle=True,                      # <--- ADD THIS
     callbacks=[cb_es, cb_lr],
     verbose=2
 )
 
 # --------------------------------------------------------------
-# 8. PREDICT & INVERSE-SCALE
+# 10. PREDICT & INVERSE LOG
 # --------------------------------------------------------------
-y_pred_s = model.predict([X_dyn_test, X_stat_test], verbose=0).flatten()
-y_pred   = scaler_y.inverse_transform(y_pred_s.reshape(-1, 1)).flatten()
+y_pred_log = model.predict([X_dyn_test, X_stat_test], verbose=0).flatten()
+y_pred = np.expm1(y_pred_log)  # inverse of log1p
 
 # --------------------------------------------------------------
-# 9. METRICS
+# 11. METRICS
 # --------------------------------------------------------------
-mae  = mean_absolute_error(y_test_orig, y_pred)
-mape = mean_absolute_percentage_error(y_test_orig, y_pred) * 100
-r2   = r2_score(y_test_orig, y_pred)
+mae  = mean_absolute_error(y_orig_test, y_pred)
+mape = mean_absolute_percentage_error(y_orig_test, y_pred) * 100
+r2   = r2_score(y_orig_test, y_pred)
 
-print("\n=== FINAL METRICS (mg/dL) ===")
+print("\n" + "="*60)
+print("FINAL METRICS (mg/dL)")
 print(f"MAE  : {mae:6.2f}")
 print(f"MAPE : {mape:6.2f}%")
 print(f"R²   : {r2:6.3f}")
+print("="*60)
 
 # --------------------------------------------------------------
-# 10. CLARKE ERROR GRID
+# 12. CLARKE ERROR GRID
 # --------------------------------------------------------------
-def clarke_zone(ref, pred):
+def get_clarke_zone(ref, pred):
+    # Force numeric (helps when using pandas)
     r, p = float(ref), float(pred)
+
     if (r <= 70 and p <= 70) or (0.8*r <= p <= 1.2*r):
         return 'A'
+
     if (130 < r <= 180 and 1.4*(r-130) >= p) or (70 < r <= 280 and p >= (r+110)):
         return 'C'
+
     if (r <= 70 and 70 < p <= 180) or (r >= 240 and 70 <= p <= 180):
         return 'D'
+
     if (r <= 70 and p > 180) or (r > 180 and p <= 70):
         return 'E'
-    return 'B'
 
-zones = {'A':0, 'B':0, 'C':0, 'D':0, 'E':0}
-points = []
-for r, p in zip(y_test_orig, y_pred):
-    z = clarke_zone(r, p)
-    zones[z] += 1
-    points.append((r, p, z))
+    return 'B'      # everything else
 
-total = len(y_test_orig)
-print("\nClarke Error Grid:")
-for z, cnt in zones.items():
-    print(f"  Zone {z}: {100*cnt/total:5.2f}% ({cnt}/{total})")
+zones_count = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'E': 0}
+total_points = len(y_orig_test)
+points = []  # Store (ref, pred, zone) for plotting
 
-# ---- Plot Clarke Grid ------------------------------------------------
-plt.figure(figsize=(10,10))
-colors = {'A':'green','B':'yellow','C':'orange','D':'red','E':'purple'}
-labels = {k:f"{k}: {v}" for k,v in {
-    'A':'Clinically Accurate','B':'Benign Errors','C':'Overcorrection',
-    'D':'Dangerous Failure','E':'Erroneous Treatment'}.items()}
+for ref, pred in zip(y_orig_test, y_pred):
+    zone = get_clarke_zone(ref, pred)
+    zones_count[zone] += 1
+    points.append((ref, pred, zone))
 
+print("Clarke Error Grid Analysis:")
+for zone, count in zones_count.items():
+    percentage = (count / total_points) * 100
+    print(f"Zone {zone}: {percentage:.2f}% ({count}/{total_points} points)")
+
+# --- Plotting Clarke Error Grid ---
+plt.figure(figsize=(10, 10))
+
+# Define zone colors
+colors = {'A': 'green', 'B': 'yellow', 'C': 'orange', 'D': 'red', 'E': 'purple'}
+labels = {
+    'A': 'A: Clinically Accurate',
+    'B': 'B: Benign Errors',
+    'C': 'C: Overcorrection',
+    'D': 'D: Dangerous Failure to Detect',
+    'E': 'E: Erroneous Treatment'
+}
+
+# Scatter points by zone
+for zone in 'ABCDE':
+    zone_points = [(r, p) for r, p, z in points if z == zone]
+    if zone_points:
+        refs, preds = zip(*zone_points)
+        plt.scatter(refs, preds, c=colors[zone], label=f"{labels[zone]} ({zones_count[zone]})", alpha=0.7, edgecolors='k', s=60)
+
+# Draw grid boundaries
 max_val = 400
-for z in 'ABCDE':
-    zp = [(r,p) for r,p,zz in points if zz==z]
-    if zp:
-        rs, ps = zip(*zp)
-        plt.scatter(rs, ps, c=colors[z], label=f"{labels[z]} ({zones[z]})",
-                    alpha=0.7, edgecolors='k', s=60)
-
-# perfect line
-plt.plot([0,max_val],[0,max_val], 'k--', lw=1, label='y = x')
-
-# Zone A fill
 x = np.linspace(0, max_val, 500)
-plt.fill_between(x, 0.8*x, 1.2*x, where=(x<=70)|(x>=70), color='green', alpha=0.1)
-plt.fill_between(x, 0, 70, where=x<=70, color='green', alpha=0.1)
 
-# Zone C
-plt.fill([70,70,290,290], [180,400,400,180], color='orange', alpha=0.4)
-plt.fill([130,180,180,130], [0,0,70,70], color='orange', alpha=0.4)
+# Perfect line (y = x)
+plt.plot([0, max_val], [0, max_val], 'k--', linewidth=1, label='Perfect Agreement')
 
-# Zone D
-plt.fill([0,70,70,0], [70,70,180,180], color='red', alpha=0.1)
-plt.fill([240,400,400,240], [70,70,180,180], color='red', alpha=0.1)
+# Zone A boundaries: ±20% or within 70
+plt.fill_between(x, 0.8*x, 1.2*x, where=(x <= 70) | (x >= 70), color='green', alpha=0.1, label='_nolegend_')
+plt.fill_between(x, 0, 70, where=x <= 70, color='green', alpha=0.1)
 
-# Zone E
-plt.fill([0,70,70,0], [180,180,400,400], color='purple', alpha=0.1)
-plt.fill([180,400,400,180], [0,0,70,70], color='purple', alpha=0.1)
+# Zone B: outside A but safe
+# Complex boundaries, draw other zones instead
 
-plt.xlim(0, max_val); plt.ylim(0, max_val)
-plt.xlabel('Reference Glucose (mg/dL)'); plt.ylabel('Predicted Glucose (mg/dL)')
-plt.title('Clarke Error Grid – LSTM')
-plt.gca().set_aspect('equal', adjustable='box')
-plt.legend(loc='upper left')
+# Zone C: 
+plt.fill([70, 70, 290], [180, 400, 400], color='orange', alpha=0.4)
+plt.fill([130, 180, 180], [0, 0, 70], color='orange', alpha=0.4)
+
+# Zone D: 
+# x: left, right, right, left
+# y: bottom, bottom, top, top
+
+plt.fill([0, 70, 70, 0], [70, 70, 180, 180], color='red', alpha=0.1)
+plt.fill([240, 400, 400, 240], [70, 70, 180, 180], color='red', alpha=0.1)
+
+# Zone E: 
+# plt.axhspan(180, max_val, xmin=0, xmax=70/400, color='purple', alpha=0.1)
+# plt.axhspan(0, 70, xmin=180/400, xmax=1, color='purple', alpha=0.1)
+
+plt.fill([0, 70, 70, 0], [180, 180, 400, 400], color='purple', alpha=0.1)
+plt.fill([180, 400, 400, 180], [0, 0, 70, 70], color='purple', alpha=0.1)
+
+# Axis limits and labels
+plt.xlim(0, max_val)
+plt.ylim(0, max_val)
+plt.xlabel('Reference Glucose (mg/dL)', fontsize=12)
+plt.ylabel('Predicted Glucose (mg/dL)', fontsize=12)
+plt.title('Clarke Error Grid Analysis', fontsize=14)
 plt.grid(True, linestyle='--', alpha=0.5)
+
+# Equal aspect ratio
+plt.gca().set_aspect('equal', adjustable='box')
+
+# Legend
+plt.legend(loc='upper left')
+
+# Show plot
 plt.tight_layout()
 plt.show()
 
 # --------------------------------------------------------------
-# 11. LOSS CURVES
+# 13. PLOTS: Loss, Scatter, Bland-Altman
 # --------------------------------------------------------------
+# Loss
 plt.figure(figsize=(8,4))
-plt.plot(history.history['loss'],     label='Train MSE')
-plt.plot(history.history['val_loss'], label='Val   MSE')
-plt.title('Training / Validation Loss')
-plt.xlabel('Epoch'); plt.ylabel('MSE (scaled)')
-plt.legend(); plt.grid(alpha=0.3); plt.tight_layout()
-plt.show()
+plt.plot(history.history['loss'], label='Train MAE')
+plt.plot(history.history['val_loss'], label='Val MAE')
+plt.title('Training / Validation MAE (log scale)')
+plt.xlabel('Epoch'); plt.ylabel('MAE'); plt.legend(); plt.grid(alpha=0.3); plt.tight_layout(); plt.show()
 
-# --------------------------------------------------------------
-# 12. ACTUAL vs PREDICTED + TREND
-# --------------------------------------------------------------
+# Scatter
 plt.figure(figsize=(7,7))
-plt.scatter(y_test_orig, y_pred, alpha=0.6, s=30, edgecolor='k', label='Predictions')
-lim = [min(y_test_orig.min(), y_pred.min()),
-       max(y_test_orig.max(), y_pred.max())]
-plt.plot(lim, lim, 'k--', lw=1, label='Ideal (y=x)')
-
-slope, intercept = np.polyfit(y_test_orig, y_pred, 1)
-x_reg = np.array(lim)
-plt.plot(x_reg, slope*x_reg + intercept, 'r-', lw=2,
+plt.scatter(y_orig_test, y_pred, alpha=0.6, s=30, edgecolor='k')
+lim = [y_orig_test.min(), y_orig_test.max()]
+plt.plot(lim, lim, 'k--', lw=1)
+slope, intercept = np.polyfit(y_orig_test, y_pred, 1)
+plt.plot(lim, slope*np.array(lim) + intercept, 'r-', lw=2,
          label=f'Trend (slope={slope:.2f})')
+plt.xlabel('Actual BG'); plt.ylabel('Predicted BG'); plt.title('Actual vs Predicted')
+plt.legend(); plt.grid(alpha=0.3); plt.tight_layout(); plt.show()
 
-plt.xlabel('Actual BG (mg/dL)')
-plt.ylabel('Predicted BG (mg/dL)')
-plt.title('Actual vs Predicted – LSTM')
-plt.legend(); plt.grid(alpha=0.3); plt.tight_layout()
-plt.show()
-
-# --------------------------------------------------------------
-# 13. BLAND-ALTMAN
-# --------------------------------------------------------------
-# diff = y_pred - y_test_orig
-# mean_diff = diff.mean()
-# std_diff  = diff.std()
-
+# Bland-Altman
+# diff = y_pred - y_orig_test
+# mean_diff, std_diff = diff.mean(), diff.std()
 # plt.figure(figsize=(8,5))
-# plt.scatter((y_test_orig + y_pred)/2, diff, alpha=0.6, s=30, edgecolor='k')
-# plt.axhline(mean_diff, color='gray', linestyle='--',
-#             label=f'Mean diff = {mean_diff:+.2f}')
-# plt.axhline(mean_diff + 1.96*std_diff, color='red', linestyle='--',
-#             label=f'+1.96σ = {mean_diff+1.96*std_diff:+.2f}')
-# plt.axhline(mean_diff - 1.96*std_diff, color='red', linestyle='--',
-#             label=f'-1.96σ = {mean_diff-1.96*std_diff:+.2f}')
-# plt.xlabel('Mean of Actual & Predicted (mg/dL)')
-# plt.ylabel('Prediction – Actual (mg/dL)')
-# plt.title('Bland-Altman Plot – LSTM')
-# plt.legend(); plt.grid(alpha=0.3); plt.tight_layout()
-# plt.show()
+# plt.scatter((y_orig_test + y_pred)/2, diff, alpha=0.6, s=30, edgecolor='k')
+# plt.axhline(mean_diff, color='gray', linestyle='--')
+# plt.axhline(mean_diff + 1.96*std_diff, color='red', linestyle='--')
+# plt.axhline(mean_diff - 1.96*std_diff, color='red', linestyle='--')
+# plt.xlabel('Mean'); plt.ylabel('Pred - Actual'); plt.title('Bland-Altman')
+# plt.legend(); plt.grid(alpha=0.3); plt.tight_layout(); plt.show()
 
 # --------------------------------------------------------------
-# 14. SAVE MODEL & SCALERS
+# 14. SAVE
 # --------------------------------------------------------------
-save_dir = "./model_weights"
-os.makedirs(save_dir, exist_ok=True)
-model_name = "/lstm_model_15s.weights.h5"
-save_file = os.path.join(save_dir, model_name)
+save_dir = Path("./model_weights")
+save_dir.mkdir(exist_ok=True)
+
+save_file = save_dir / "lstm_model_15s.weights.h5"
 model.save(save_file)
 
 # np.savez(os.path.join(save_dir, "scalers.npz"),

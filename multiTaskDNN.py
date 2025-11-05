@@ -9,7 +9,7 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers
 
 # ---- CONFIG ----
-FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv'
+FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features_15s_nonlin.csv'
 CASEID_COL = 'caseid'
 MULTITASK = True  # <<---- Toggle between True (BG + BP) or False (BG only)
 
@@ -20,7 +20,7 @@ else:
     TARGET_COLS = ['preop_gluc']
 
 # EXCLUDED_COL = [CASEID_COL]
-EXCLUDED_COL = [CASEID_COL, 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s', 'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min', 'ecg_entropy']
+EXCLUDED_COL = [CASEID_COL, 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s', 'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min', 'ecg_entropy', 'ecg_teager_energy', 'ecg_log_energy', 'ecg_skew', 'ecg_iqr', 'ecg_spectral_entropy']
 BATCH_SIZE = 64
 EPOCHS = 30
 LEARNING_RATE = 1e-3
