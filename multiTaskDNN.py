@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import os
@@ -19,12 +19,13 @@ if MULTITASK:
 else:
     TARGET_COLS = ['preop_gluc']
 
-EXCLUDED_COL = [CASEID_COL, TARGET_COLS, 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s', 'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min', 'ecg_entropy']
+# EXCLUDED_COL = [CASEID_COL]
+EXCLUDED_COL = [CASEID_COL, 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s', 'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min', 'ecg_entropy']
 BATCH_SIZE = 64
-EPOCHS = 8
+EPOCHS = 30
 LEARNING_RATE = 1e-3
 DROPOUT = 0.2
-DNN_LAYERS = [128, 64, 32]
+DNN_LAYERS = [256, 128, 64]
 physical_devices = tf.config.list_physical_devices('GPU')
 DEVICE = '/GPU:0' if physical_devices else '/CPU:0'
 
@@ -41,7 +42,7 @@ df = pd.read_csv(FILTERED_FILE).dropna()
 print(f"Loaded shape: {df.shape}")
 
 # ----- Feature/target selection -----
-features_to_use = [c for c in df.columns if c not in EXCLUDED_COL]
+features_to_use = [c for c in df.columns if c not in EXCLUDED_COL + TARGET_COLS]
 X = df[features_to_use].values.astype(np.float32)
 y = df[TARGET_COLS].values.astype(np.float32)
 caseids = df[CASEID_COL].values
@@ -99,6 +100,10 @@ def multitask_loss(y_true, y_pred):
         return tf.reduce_mean(tf.reduce_sum(weights * tf.square(y_true - y_pred), axis=1))
     else:
         return tf.reduce_mean(tf.square(y_true - y_pred))
+    
+# Root Mean Squared Error
+def rmse(y_true, y_pred):
+    return np.sqrt(mean_squared_error(y_true, y_pred))
 
 optimizer = optimizers.Adam(learning_rate=LEARNING_RATE)
 model.compile(optimizer=optimizer, loss=multitask_loss)
@@ -123,14 +128,19 @@ if MULTITASK:
 
     print("\n--- Multi-Task Regression Metrics ---")
     print(f"MAE Glucose:  {mean_absolute_error(bg_true, bg_pred):.2f} mg/dL")
+    print(f"RMSE Glucose: {rmse(bg_true, bg_pred):.2f} mg/dL")
     print(f"MAE Mean BP:  {mean_absolute_error(meanbp_true, meanbp_pred):.2f} mmHg")
+    print(f"RMSE Mean BP: {rmse(meanbp_true, meanbp_pred):.2f} mmHg")
     print(f"MAE Sys BP:   {mean_absolute_error(sysbp_true, sysbp_pred):.2f} mmHg")
+    print(f"RMSE Sys BP:  {rmse(sysbp_true, sysbp_pred):.2f} mmHg")
     print(f"MAE Dys BP:   {mean_absolute_error(dysbp_true, dysbp_pred):.2f} mmHg")
+    print(f"RMSE Dys BP:  {rmse(dysbp_true, dysbp_pred):.2f} mmHg")
 else:
     bg_pred = y_pred.flatten()
     bg_true = y_test_orig.flatten()
     print("\n--- Single-Task Regression Metrics ---")
     print(f"MAE Glucose: {mean_absolute_error(bg_true, bg_pred):.2f} mg/dL")
+    print(f"RMSE Glucose: {rmse(bg_true, bg_pred):.2f} mg/dL")
 
 # ----- Clarke Error Grid (BG only) -----
 def get_clarke_zone(ref, pred):
@@ -153,6 +163,7 @@ for ref, pred in zip(bg_true, bg_pred):
 print("\n--- Clarke Error Grid Analysis (BG only) ---")
 for zone, count in zones_count.items():
     print(f"Zone {zone}: {count/total_points*100:.2f}% ({count}/{total_points})")
+print("\n")
 
 # --- Plotting Clarke Error Grid ---
 plt.figure(figsize=(10, 10))
