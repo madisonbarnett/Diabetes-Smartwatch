@@ -3,7 +3,7 @@ import vitaldb
 import numpy as np
 import os
 from scipy.signal import find_peaks, butter, lfilter, filtfilt
-from scipy.stats import entropy
+from scipy.stats import entropy, skew
 
 # This script extracts ECG, PPG, BG, and BP
 
@@ -11,7 +11,7 @@ from scipy.stats import entropy
 OUTPUT_DIR = "./processed_data"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 # UPDATE THE OUTPUT FILE ACCORDING TO SAMPLE WINDOW SIZE (e.g. _30s for 30 second window)
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "vitaldb_ppg_ecg_extracted_features_15s.csv")
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, "vitaldb_ppg_ecg_extracted_features_15s_nonlin.csv")
 
 VITALDB_DATA_URL = "https://api.vitaldb.net/cases"
 VITALDB_TRACKS_URL = "https://api.vitaldb.net/trks"
@@ -27,7 +27,7 @@ WINDOW_DURATION_SECONDS = 15
 SAMPLES_PER_WINDOW = SAMPLE_RATE_HZ * WINDOW_DURATION_SECONDS
 BP_SAMPLES_PER_WINDOW = int(BP_SAMPLE_RATE_HZ * WINDOW_DURATION_SECONDS)
 VALID_WINDOW_MINUTES = 8  # +/- window around 'opstart' for BG stability
-BATCH_SIZE = 10 # Number of cases to write to csv at a time (improves speed by reducing file I/O)
+BATCH_SIZE = 50 # Number of cases to write to csv at a time (improves speed by reducing file I/O)
 
 # --- UTILITY FUNCTIONS ---
 def butter_bandpass(lowcut, highcut, fs, order=3):
@@ -41,6 +41,26 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=3):
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     y = filtfilt(b, a, data)
     return y
+
+def teager_kaiser_energy(x):
+    """Computes average Teager-Kaiser Energy for a 1D signal."""
+    if len(x) < 3:
+        return 0
+    x = np.asarray(x)
+    energy = x[1:-1]**2 - x[:-2] * x[2:]
+    return np.mean(np.abs(energy))
+
+def log_energy(x):
+    """Computes log-energy profile."""
+    energy = np.sum(x**2)
+    return np.log(energy + 1e-8)  # avoid log(0)
+
+def spectral_entropy(x, fs):
+    """Computes normalized spectral entropy."""
+    freqs = np.fft.rfftfreq(len(x), 1/fs)
+    psd = np.abs(np.fft.rfft(x))**2
+    psd_norm = psd / np.sum(psd)
+    return entropy(psd_norm)
 
 def extract_target_bp(bp_series):
     """
@@ -65,9 +85,11 @@ def extract_ppg_features(ppg_series, fs):
 
     if ppg_series_clean.size == 0:
         return {
-            'ppg_mean': 0, 'ppg_std': 0, 'mean_pp_interval_s': 0,
-            'std_pp_interval_s': 0, 'ppg_freq': 0, 'auc': 0,
-            'first_deriv_max': 0, 'first_deriv_min': 0, 'entropy': 0
+            'ppg_mean': 0, 'ppg_std': 0, 'ppg_mean_pp_interval_s': 0,
+            'ppg_std_pp_interval_s': 0, 'ppg_freq': 0, 'ppg_auc': 0,
+            'ppg_first_deriv_max': 0, 'ppg_first_deriv_min': 0, 'ppg_entropy': 0,
+            'ppg_teager_energy': 0, 'ppg_log_energy': 0, 'ppg_skew': 0, 
+            'ppg_iqr': 0, 'ppg_spectral_entropy': 0
         }
 
     features['ppg_mean'] = np.mean(ppg_series_clean)
@@ -76,25 +98,32 @@ def extract_ppg_features(ppg_series, fs):
     peaks, _ = find_peaks(ppg_series_clean, distance=int(fs*0.4), height=0)
     if len(peaks) > 1:
         pp_intervals = np.diff(peaks)
-        features['mean_pp_interval_s'] = np.mean(pp_intervals) / fs
-        features['std_pp_interval_s'] = np.std(pp_intervals) / fs
+        features['ppg_mean_pp_interval_s'] = np.mean(pp_intervals) / fs
+        features['ppg_std_pp_interval_s'] = np.std(pp_intervals) / fs
         features['ppg_freq'] = fs / np.mean(pp_intervals)
     else:
-        features['mean_pp_interval_s'] = 0
-        features['std_pp_interval_s'] = 0
+        features['ppg_mean_pp_interval_s'] = 0
+        features['ppg_std_pp_interval_s'] = 0
         features['ppg_freq'] = 0
 
     # Normalize amplitude before calculating cumulative metrics
     ppg_series_clean = (ppg_series_clean - np.mean(ppg_series_clean)) / np.std(ppg_series_clean)
 
-    features['auc'] = np.trapezoid(ppg_series_clean)
+    features['ppg_auc'] = np.trapezoid(ppg_series_clean)
 
     derivative = np.diff(ppg_series_clean)
-    features['first_deriv_max'] = np.max(derivative)
-    features['first_deriv_min'] = np.min(derivative)
+    features['ppg_first_deriv_max'] = np.max(derivative)
+    features['ppg_first_deriv_min'] = np.min(derivative)
 
     hist, _ = np.histogram(ppg_series_clean, bins='auto')
-    features['entropy'] = entropy(hist)
+    features['ppg_entropy'] = entropy(hist)
+
+    # --- Nonlinear and higher-order features ---
+    features['ppg_teager_energy'] = teager_kaiser_energy(ppg_series_clean)
+    features['ppg_log_energy'] = log_energy(ppg_series_clean)
+    features['ppg_skew'] = skew(ppg_series_clean)
+    features['ppg_iqr'] = np.percentile(ppg_series_clean, 75) - np.percentile(ppg_series_clean, 25)
+    features['ppg_spectral_entropy'] = spectral_entropy(ppg_series_clean, fs)
 
     return features
 
@@ -111,7 +140,9 @@ def extract_ecg_features(ecg_series, fs):
         return {
             'ecg_mean': 0, 'ecg_std': 0, 'ecg_mean_pp_interval_s': 0,
             'ecg_std_pp_interval_s': 0, 'ecg_freq': 0, 'ecg_auc': 0,
-            'ecg_first_deriv_max': 0, 'ecg_first_deriv_min': 0, 'ecg_entropy': 0
+            'ecg_first_deriv_max': 0, 'ecg_first_deriv_min': 0, 'ecg_entropy': 0,
+            'ecg_teager_energy': 0, 'ecg_log_energy': 0, 'ecg_skew': 0, 
+            'ecg_iqr': 0, 'ecg_spectral_entropy': 0
         }
 
     features['ecg_mean'] = np.mean(ecg_series_clean)
@@ -136,6 +167,13 @@ def extract_ecg_features(ecg_series, fs):
 
     hist, _ = np.histogram(ecg_series_clean, bins='auto')
     features['ecg_entropy'] = entropy(hist)
+
+    # --- Nonlinear and higher-order features ---
+    features['ecg_teager_energy'] = teager_kaiser_energy(ecg_series_clean)
+    features['ecg_log_energy'] = log_energy(ecg_series_clean)
+    features['ecg_skew'] = skew(ecg_series_clean)
+    features['ecg_iqr'] = np.percentile(ecg_series_clean, 75) - np.percentile(ecg_series_clean, 25)
+    features['ecg_spectral_entropy'] = spectral_entropy(ecg_series_clean, fs)
 
     return features
 
