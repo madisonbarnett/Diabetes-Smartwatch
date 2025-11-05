@@ -1,6 +1,7 @@
 # --------------------------------------------------------------
-#  lstm_fixed.py
-#  Global scaling + log-target scaling → MAE < 12, slope > 0.95, >95% Zone A
+#  lstm2.py
+#  Improved LSTM model!
+#  Global scaling + log-target scaling 
 # --------------------------------------------------------------
 
 import os
