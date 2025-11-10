@@ -1,5 +1,5 @@
 # --------------------------------------------------------------
-#  debug_signal.py — 100% FIXED, NO SHAPE ERRORS
+#  lstmFake.py — Used to test correlation of a fake feature
 # --------------------------------------------------------------
 
 import numpy as np
