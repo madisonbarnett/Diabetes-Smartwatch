@@ -26,12 +26,23 @@ CASEID_COL    = "caseid"
 TARGET_COL    = "preop_gluc"
 STATIC_COLS   = ["age", "sex", "preop_dm", "weight", "height"]
 
+# Exclude ECG features
+# EXCLUDED_COLS = ['ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s',
+#                  'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min',
+#                  'ecg_entropy', 'ecg_teager_energy', 'ecg_log_energy', 'ecg_skew',
+#                  'ecg_iqr', 'ecg_spectral_entropy']
+# Tested excluding PPG features and BP (leaving mean BP only)
+# EXCLUDED_COLS2 = ['ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s', 'ppg_std_pp_interval_s',
+#                   'ppg_freq', 'ppg_auc', 'ppg_first_deriv_max', 'ppg_first_deriv_min',
+#                   'ppg_entropy', 'ppg_teager_energy', 'ppg_log_energy', 'ppg_skew',
+#                   'ppg_iqr', 'ppg_spectral_entropy',  'sys_bp', 'dys_bp']
+
 MAX_T         = 64
 LSTM_UNITS    = 32
 DENSE_UNITS   = 32          # a bit larger head
 DROPOUT       = 0.5
 BATCH_SIZE    = 64
-EPOCHS        = 80
+EPOCHS        = 50
 PATIENCE_ES   = 25
 PATIENCE_LR   = 10
 SEED          = 42
@@ -51,7 +62,10 @@ df["log_gluc"] = np.log1p(df[TARGET_COL])
 
 dynamic_cols = [c for c in df.columns if c not in (CASEID_COL, TARGET_COL, "log_gluc", *STATIC_COLS)]
 static_cols  = STATIC_COLS
+features_to_use = dynamic_cols + static_cols
 D, S = len(dynamic_cols), len(static_cols)
+
+print(f"Using {len(features_to_use)} features: {features_to_use[:]} ...")
 
 # --------------------------------------------------------------
 # 3. BUILD ARRAYS + PADDING (NO per-subject z-score)
