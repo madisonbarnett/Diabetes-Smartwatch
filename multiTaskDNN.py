@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
@@ -20,14 +20,25 @@ else:
     TARGET_COLS = ['preop_gluc']
 
 # EXCLUDED_COL = [CASEID_COL]
-EXCLUDED_COL = [CASEID_COL, 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s', 'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min', 'ecg_entropy', 'ecg_teager_energy', 'ecg_log_energy', 'ecg_skew', 'ecg_iqr', 'ecg_spectral_entropy']
-BATCH_SIZE = 64
-EPOCHS = 30
-LEARNING_RATE = 1e-3
-DROPOUT = 0.2
-DNN_LAYERS = [256, 128, 64]
+EXCLUDED_COL = [CASEID_COL, 'ppg_freq', 'ppg_first_deriv_min', 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 
+                'ecg_std_pp_interval_s', 'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 
+                'ecg_first_deriv_min', 'ecg_entropy', 'ecg_teager_energy', 'ecg_log_energy', 
+                'ecg_skew', 'ecg_iqr', 'ecg_spectral_entropy']
+BATCH_SIZE = 128
+EPOCHS = 10
+LEARNING_RATE = 15e-4
+DROPOUT = 0.1
+# DNN_LAYERS = [512, 512, 256, 256, 256, 128, 128, 128, 64, 64, 64, 32, 32, 32, 16, 16, 16, 8, 8, 8] # 20 Layer
+# DNN_LAYERS = [256, 256, 128, 128, 64, 64, 32, 32, 16, 16]       # 10 Layer
+DNN_LAYERS = [256, 128, 64, 32, 16]                               # 5 Layer
+# DNN_LAYERS = [128, 64, 32]
+
 physical_devices = tf.config.list_physical_devices('GPU')
 DEVICE = '/GPU:0' if physical_devices else '/CPU:0'
+
+# Root Mean Squared Error Helper Function
+def rmse(y_true, y_pred):
+    return np.sqrt(mean_squared_error(y_true, y_pred))
 
 print("Hyperparameters:")
 print(f"Mode: {'Multi-Task' if MULTITASK else 'Single-Task'}")
@@ -47,7 +58,8 @@ X = df[features_to_use].values.astype(np.float32)
 y = df[TARGET_COLS].values.astype(np.float32)
 caseids = df[CASEID_COL].values
 
-print(f"Using {len(features_to_use)} features: {features_to_use[:10]} ...")
+# To only print the first 10 features use: features: {features_to_use[:10]} ...
+print(f"Using {len(features_to_use)} features: {features_to_use}")
 
 # ----- Train/test split -----
 unique_caseids = np.unique(caseids)
@@ -70,20 +82,22 @@ y_train_orig, y_test_orig = y_train, y_test
 class MultiTaskRegressor(tf.keras.Model):
     def __init__(self, in_features, layer_sizes, dropout, out_dim):
         super(MultiTaskRegressor, self).__init__()
-        self.shared = models.Sequential([
-            layers.Dense(layer_sizes[0], input_shape=(in_features,)),
-            layers.ReLU(),
-            layers.BatchNormalization(),
-            layers.Dropout(dropout),
-            layers.Dense(layer_sizes[1]),
-            layers.ReLU(),
-            layers.BatchNormalization(),
-            layers.Dropout(dropout),
-            layers.Dense(layer_sizes[2]),
-            layers.ReLU(),
-            layers.BatchNormalization(),
-            layers.Dropout(dropout),
-        ])
+        # Build shared layers dynamically
+        shared_layers = []
+        for n, size in enumerate(layer_sizes):
+            if n == 0:
+                # First hidden layer includes input shape
+                shared_layers.append(layers.Dense(layer_sizes[0], input_shape=(in_features,)))
+            else:
+                shared_layers.append(layers.Dense(size, kernel_regularizer=tf.keras.regularizers.l2(1e-4)))
+            shared_layers.append(layers.ReLU())
+            shared_layers.append(layers.BatchNormalization())
+            shared_layers.append(layers.Dropout(dropout))
+
+        # Sequential container for shared layers
+        self.shared = models.Sequential(shared_layers)
+        
+        # Output Layer
         self.output_head = layers.Dense(out_dim, activation='linear')
 
     def call(self, x, training=False):
@@ -96,15 +110,11 @@ model = MultiTaskRegressor(X_train_scaled.shape[1], DNN_LAYERS, DROPOUT, out_dim
 # Weighted multitask loss
 def multitask_loss(y_true, y_pred):
     if MULTITASK:
-        weights = tf.constant([0.5, 0.2, 0.15, 0.15][:out_dim], dtype=tf.float32)
+        weights = tf.constant([0.55, 0.15, 0.15, 0.15][:out_dim], dtype=tf.float32)
         return tf.reduce_mean(tf.reduce_sum(weights * tf.square(y_true - y_pred), axis=1))
     else:
         return tf.reduce_mean(tf.square(y_true - y_pred))
     
-# Root Mean Squared Error
-def rmse(y_true, y_pred):
-    return np.sqrt(mean_squared_error(y_true, y_pred))
-
 optimizer = optimizers.Adam(learning_rate=LEARNING_RATE)
 model.compile(optimizer=optimizer, loss=multitask_loss)
 
@@ -204,12 +214,18 @@ plt.fill([70, 70, 290], [180, 400, 400], color='orange', alpha=0.4)
 plt.fill([130, 180, 180], [0, 0, 70], color='orange', alpha=0.4)
 
 # Zone D: 
-plt.axhspan(70, 180, xmin=0, xmax=70/400, color='red', alpha=0.1)
-plt.axhspan(70, 180, xmin=240/400, xmax=1, color='red', alpha=0.1)
+# x: left, right, right, left
+# y: bottom, bottom, top, top
+
+plt.fill([0, 70, 70, 0], [70, 70, 180, 180], color='red', alpha=0.1)
+plt.fill([240, 400, 400, 240], [70, 70, 180, 180], color='red', alpha=0.1)
 
 # Zone E: 
-plt.axhspan(180, max_val, xmin=0, xmax=70/400, color='purple', alpha=0.1)
-plt.axhspan(0, 70, xmin=180/400, xmax=1, color='purple', alpha=0.1)
+# plt.axhspan(180, max_val, xmin=0, xmax=70/400, color='purple', alpha=0.1)
+# plt.axhspan(0, 70, xmin=180/400, xmax=1, color='purple', alpha=0.1)
+
+plt.fill([0, 70, 70, 0], [180, 180, 400, 400], color='purple', alpha=0.1)
+plt.fill([180, 400, 400, 180], [0, 0, 70, 70], color='purple', alpha=0.1)
 
 # Axis limits and labels
 plt.xlim(0, max_val)
