@@ -27,19 +27,14 @@ TARGET_COL    = "preop_gluc"
 STATIC_COLS   = ["age", "sex", "preop_dm", "weight", "height"]
 
 # Exclude ECG features
-# EXCLUDED_COLS = ['ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s',
-#                  'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min',
-#                  'ecg_entropy', 'ecg_teager_energy', 'ecg_log_energy', 'ecg_skew',
-#                  'ecg_iqr', 'ecg_spectral_entropy']
-# Tested excluding PPG features and BP (leaving mean BP only)
-# EXCLUDED_COLS2 = ['ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s', 'ppg_std_pp_interval_s',
-#                   'ppg_freq', 'ppg_auc', 'ppg_first_deriv_max', 'ppg_first_deriv_min',
-#                   'ppg_entropy', 'ppg_teager_energy', 'ppg_log_energy', 'ppg_skew',
-#                   'ppg_iqr', 'ppg_spectral_entropy',  'sys_bp', 'dys_bp']
+EXCLUDED_COLS = ['ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s',
+                 'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min',
+                 'ecg_entropy', 'ecg_teager_energy', 'ecg_log_energy', 'ecg_skew',
+                 'ecg_iqr', 'ecg_spectral_entropy']
 
 MAX_T         = 64         # max sequence length (64 time-steps)
 LSTM_UNITS    = 32
-DENSE_UNITS   = 32          # a bit larger head
+DENSE_UNITS   = 32         
 DROPOUT       = 0.5
 BATCH_SIZE    = 64
 EPOCHS        = 200
@@ -60,7 +55,7 @@ print(f"Raw rows: {df.shape[0]}, subjects: {df[CASEID_COL].nunique()}")
 assert df.groupby(CASEID_COL)[TARGET_COL].nunique().max() == 1  # Check one target per subject
 df["log_gluc"] = np.log1p(df[TARGET_COL])   # Log-transform target to stabilize variance
 
-dynamic_cols = [c for c in df.columns if c not in (CASEID_COL, TARGET_COL, "log_gluc", *STATIC_COLS)]
+dynamic_cols = [c for c in df.columns if c not in (CASEID_COL, TARGET_COL, "log_gluc", *STATIC_COLS, *EXCLUDED_COLS)]
 static_cols  = STATIC_COLS
 features_to_use = dynamic_cols + static_cols
 D, S = len(dynamic_cols), len(static_cols)
