@@ -37,14 +37,14 @@ STATIC_COLS   = ["age", "sex", "preop_dm", "weight", "height"]
 #                   'ppg_entropy', 'ppg_teager_energy', 'ppg_log_energy', 'ppg_skew',
 #                   'ppg_iqr', 'ppg_spectral_entropy',  'sys_bp', 'dys_bp']
 
-MAX_T         = 64
+MAX_T         = 64         # max sequence length (64 time-steps)
 LSTM_UNITS    = 32
 DENSE_UNITS   = 32          # a bit larger head
 DROPOUT       = 0.5
 BATCH_SIZE    = 64
-EPOCHS        = 50
-PATIENCE_ES   = 25
-PATIENCE_LR   = 10
+EPOCHS        = 200
+PATIENCE_ES   = 15
+PATIENCE_LR   = 5
 SEED          = 42
 
 tf.random.set_seed(SEED)
@@ -54,11 +54,11 @@ np.random.seed(SEED)
 # 2. LOAD & LOG TARGET
 # --------------------------------------------------------------
 print("Loading data...")
-df = pd.read_csv(FILTERED_FILE).dropna()
+df = pd.read_csv(FILTERED_FILE).dropna()    # Load CSV, drop rows with missing value
 print(f"Raw rows: {df.shape[0]}, subjects: {df[CASEID_COL].nunique()}")
 
-assert df.groupby(CASEID_COL)[TARGET_COL].nunique().max() == 1
-df["log_gluc"] = np.log1p(df[TARGET_COL])
+assert df.groupby(CASEID_COL)[TARGET_COL].nunique().max() == 1  # Check one target per subject
+df["log_gluc"] = np.log1p(df[TARGET_COL])   # Log-transform target to stabilize variance
 
 dynamic_cols = [c for c in df.columns if c not in (CASEID_COL, TARGET_COL, "log_gluc", *STATIC_COLS)]
 static_cols  = STATIC_COLS
@@ -73,9 +73,10 @@ print(f"Using {len(features_to_use)} features: {features_to_use[:]} ...")
 subjects = df[CASEID_COL].unique()
 n_subj   = len(subjects)
 
-X_dyn  = np.zeros((n_subj, MAX_T, D), dtype=np.float32)
-X_stat = np.zeros((n_subj, S), dtype=np.float32)
-y_log  = np.zeros((n_subj, 1), dtype=np.float32)
+# Create three arrays per patient
+X_dyn  = np.zeros((n_subj, MAX_T, D), dtype=np.float32) # Padded/truncated time series
+X_stat = np.zeros((n_subj, S), dtype=np.float32)    # Static covariates (same for every time step)
+y_log  = np.zeros((n_subj, 1), dtype=np.float32)    # Log glucose
 
 print("Padding (global scaling later)...")
 for i, subj in enumerate(subjects):
@@ -138,30 +139,31 @@ def build_model(timesteps, n_dyn, n_stat):
     dyn_in  = layers.Input(shape=(timesteps, n_dyn), name="dyn")
     stat_in = layers.Input(shape=(n_stat,), name="stat")
 
-    # Repeat static
+    # Repeat static (broadcast static vector to every time step)
     stat_rep = layers.RepeatVector(timesteps)(stat_in)
     x = layers.Concatenate(axis=-1)([dyn_in, stat_rep])
-    x = layers.Masking(mask_value=0.0)(x)
+    x = layers.Masking(mask_value=0.0)(x)  # Ignores padded zeros
 
-    # Bidirectional LSTM
+    # Bidirectional LSTM (Captures forward + backward temporal patterns; returns full sequence)
     x = layers.Bidirectional(
         layers.LSTM(LSTM_UNITS, dropout=DROPOUT, recurrent_dropout=DROPOUT,
                     return_sequences=True)
     )(x)   # (B, T, 64)
 
-    # Dual pooling
-    avg_pool = layers.GlobalAveragePooling1D()(x)
-    max_pool = layers.GlobalMaxPooling1D()(x)
+    # Dual pooling (summarizes whole sequence into fixed-size vector)
+    # Mask-aware pooling (drops time dim, keeps mask logic)
+    avg_pool = layers.GlobalAveragePooling1D(keepdims=False)(x)
+    max_pool = layers.GlobalMaxPooling1D(keepdims=False)(x)
     x = layers.Concatenate()([avg_pool, max_pool])   # (B, 128)
 
-    # Head
+    # Head (non-linear mapping, single regression value)
     x = layers.Dense(DENSE_UNITS, activation="relu")(x)
     x = layers.Dropout(DROPOUT)(x)
     out = layers.Dense(1, activation="linear")(x)
 
     model = Model([dyn_in, stat_in], out)
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(clipnorm=1.0),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3, clipnorm=1.0),
         loss="mae",
         metrics=["mae"]
     )
@@ -176,8 +178,10 @@ model.summary()
 # log_dir = Path("./tb_logs/lstm_fixed")
 # log_dir.mkdir(parents=True, exist_ok=True)
 
+# Stop when validation MAE stops improving for PATIENCE_ES epochs, restore best weights
 cb_es = callbacks.EarlyStopping(monitor="val_mae", patience=PATIENCE_ES,
                                 restore_best_weights=True, min_delta=1e-4)
+# Reduce LR when validation MAE plateaus
 cb_lr = callbacks.ReduceLROnPlateau(monitor="val_mae", factor=0.3,
                                     patience=PATIENCE_LR, min_lr=1e-6)
 # cb_tb = callbacks.TensorBoard(log_dir=str(log_dir))
@@ -187,28 +191,28 @@ cb_lr = callbacks.ReduceLROnPlateau(monitor="val_mae", factor=0.3,
 # --------------------------------------------------------------
 history = model.fit(
     x=[X_dyn_train, X_stat_train],
-    y=y_train_s,
+    y=y_train_s,    # Training on scaled log-target
     validation_data=([X_dyn_test, X_stat_test], y_test_s),
     epochs=EPOCHS,
     batch_size=BATCH_SIZE,
     shuffle=True,
     callbacks=[cb_es, cb_lr],
-    verbose=2
+    verbose=2   # Prints one line per epoch
 )
 
 # --------------------------------------------------------------
 # 9. PREDICT & INVERSE
 # --------------------------------------------------------------
-y_pred_s = model.predict([X_dyn_test, X_stat_test], verbose=0).flatten()
-y_pred_log = scaler_y.inverse_transform(y_pred_s.reshape(-1, 1)).flatten()
-y_pred = np.expm1(y_pred_log)
+y_pred_s = model.predict([X_dyn_test, X_stat_test], verbose=0).flatten()    # Predict on scaled space
+y_pred_log = scaler_y.inverse_transform(y_pred_s.reshape(-1, 1)).flatten()  # Inverse the StnadardScaler -> original log-glucose
+y_pred = np.expm1(y_pred_log)   # Original glucose (mg/dL)
 
 # --------------------------------------------------------------
 # 10. METRICS
 # --------------------------------------------------------------
-mae  = mean_absolute_error(y_orig_test, y_pred)
-mape = mean_absolute_percentage_error(y_orig_test, y_pred) * 100
-r2   = r2_score(y_orig_test, y_pred)
+mae  = mean_absolute_error(y_orig_test, y_pred) # absolute error
+mape = mean_absolute_percentage_error(y_orig_test, y_pred) * 100    # relative error in %
+r2   = r2_score(y_orig_test, y_pred)    # proportion of variance explained
 
 print("\n" + "="*60)
 print(f"MAE  : {mae:6.2f} mg/dL")
@@ -324,13 +328,14 @@ plt.show()
 # --------------------------------------------------------------
 # 12. PLOTS
 # --------------------------------------------------------------
+# Training curve (train vs val MAE, log scale)
 plt.figure(figsize=(8,4))
 plt.plot(history.history['loss'], label='Train MAE')
 plt.plot(history.history['val_loss'], label='Val MAE')
 plt.title('Training / Validation MAE (log scale)')
 plt.xlabel('Epoch'); plt.ylabel('MAE'); plt.legend(); plt.grid(alpha=0.3); plt.tight_layout(); plt.show()
 
-# Scatter
+# Actual vs Predicted scatter
 plt.figure(figsize=(7,7))
 plt.scatter(y_orig_test, y_pred, alpha=0.6, s=30, edgecolor='k')
 lim = [y_orig_test.min(), y_orig_test.max()]
