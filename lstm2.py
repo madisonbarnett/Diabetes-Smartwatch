@@ -20,11 +20,11 @@ from tensorflow.keras import layers, Model, callbacks
 # --------------------------------------------------------------
 # 1. CONFIG
 # --------------------------------------------------------------
-SUFFIX        = '15s_nonlin'
+SUFFIX        = '5s_nonlin'
 FILTERED_FILE = f'./processed_data/vitaldb_ppg_ecg_extracted_features_{SUFFIX}.csv'
 CASEID_COL    = "caseid"
 TARGET_COL    = "preop_gluc"
-STATIC_COLS   = ["age", "sex", "preop_dm", "weight", "height"]
+STATIC_COLS   = ["age", "sex", "preop_dm", "weight", "height", "bmi"]
 
 # Exclude ECG features
 EXCLUDED_COLS = ['ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s',
@@ -32,11 +32,12 @@ EXCLUDED_COLS = ['ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_in
                  'ecg_entropy', 'ecg_teager_energy', 'ecg_log_energy', 'ecg_skew',
                  'ecg_iqr', 'ecg_spectral_entropy']
 
-MAX_T         = 64         # max sequence length (64 time-steps)
+# MAX_T         = 64         # max sequence length (64 time-steps)
+MAX_T         = 192         # max sequence length (192 time-steps)
 LSTM_UNITS    = 32
 DENSE_UNITS   = 32         
 DROPOUT       = 0.5
-BATCH_SIZE    = 64
+BATCH_SIZE    = 128
 EPOCHS        = 200
 PATIENCE_ES   = 15
 PATIENCE_LR   = 5
