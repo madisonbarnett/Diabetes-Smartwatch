@@ -9,7 +9,7 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers
 
 # ---- CONFIG ----
-FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features_15s_nonlin.csv'
+FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features_5s_nonlin.csv'
 CASEID_COL = 'caseid'
 MULTITASK = True  # <<---- Toggle between True (BG + BP) or False (BG only)
 
@@ -27,7 +27,7 @@ EXCLUDED_COL = [CASEID_COL, 'ppg_freq', 'ppg_first_deriv_min', 'ecg_mean', 'ecg_
 BATCH_SIZE = 128
 EPOCHS = 10
 LEARNING_RATE = 15e-4
-DROPOUT = 0.1
+DROPOUT = 0.5
 # DNN_LAYERS = [512, 512, 256, 256, 256, 128, 128, 128, 64, 64, 64, 32, 32, 32, 16, 16, 16, 8, 8, 8] # 20 Layer
 # DNN_LAYERS = [256, 256, 128, 128, 64, 64, 32, 32, 16, 16]       # 10 Layer
 DNN_LAYERS = [256, 128, 64, 32, 16]                               # 5 Layer
