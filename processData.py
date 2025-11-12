@@ -11,7 +11,7 @@ from scipy.stats import entropy, skew
 OUTPUT_DIR = "./processed_data"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 # UPDATE THE OUTPUT FILE ACCORDING TO SAMPLE WINDOW SIZE (e.g. _30s for 30 second window)
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "vitaldb_ppg_ecg_extracted_features_15s_nonlin.csv")
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, "vitaldb_ppg_ecg_extracted_features_5s_nonlin.csv")
 
 VITALDB_DATA_URL = "https://api.vitaldb.net/cases"
 VITALDB_TRACKS_URL = "https://api.vitaldb.net/trks"
@@ -23,7 +23,7 @@ SYS_BP_NAME = 'Solar8000/ART_SBP'
 DYS_BP_NAME = 'Solar8000/ART_DBP'
 SAMPLE_RATE_HZ = 500
 BP_SAMPLE_RATE_HZ = 0.5
-WINDOW_DURATION_SECONDS = 15
+WINDOW_DURATION_SECONDS = 5
 SAMPLES_PER_WINDOW = SAMPLE_RATE_HZ * WINDOW_DURATION_SECONDS
 BP_SAMPLES_PER_WINDOW = int(BP_SAMPLE_RATE_HZ * WINDOW_DURATION_SECONDS)
 VALID_WINDOW_MINUTES = 8  # +/- window around 'opstart' for BG stability
@@ -360,6 +360,7 @@ for caseid in caseids_to_process:
             'preop_dm': case_meta['preop_dm'],
             'weight': case_meta['weight'],
             'height': case_meta['height'],
+            'bmi': case_meta['bmi'],
             **ppg_features, # Unpack the extracted PPG features
             **ecg_features # Unpack the extracted ECG features
         }
