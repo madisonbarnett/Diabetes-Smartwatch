@@ -27,7 +27,7 @@ TARGET_COL    = "preop_gluc"
 STATIC_COLS   = ["age", "sex", "preop_dm", "weight", "height", "bmi"]
 
 # Exclude ECG features
-EXCLUDED_COLS = ['ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s',
+EXCLUDED_COLS = ['mean_bp', 'sys_bp', 'dys_bp', 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s',
                  'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min',
                  'ecg_entropy', 'ecg_teager_energy', 'ecg_log_energy', 'ecg_skew',
                  'ecg_iqr', 'ecg_spectral_entropy']
@@ -347,12 +347,12 @@ plt.legend(); plt.grid(alpha=0.3); plt.tight_layout(); plt.show()
 # --------------------------------------------------------------
 save_dir = Path("./model_weights")
 save_dir.mkdir(exist_ok=True)
-model.save(save_dir / f"lstm_model2_{SUFFIX}.weights.h5")
+model.save(save_dir / f"lstm_model2_{SUFFIX}.keras")
 
 # np.savez(save_dir / "scalers.npz",
 #          dyn_mean=scaler_dyn.mean_, dyn_scale=scaler_dyn.scale_,
 #          stat_mean=scaler_stat.mean_, stat_scale=scaler_stat.scale_,
 #          y_mean=scaler_y.mean_[0], y_scale=scaler_y.scale_[0])
 
-print(f"\nSaved: {save_dir / f'lstm_model2_{SUFFIX}.weights.h5'}")
+print(f"\nSaved: {save_dir / f'lstm_model2_{SUFFIX}.keras'}")
 # print(f"TensorBoard: tensorboard --logdir {log_dir}")
