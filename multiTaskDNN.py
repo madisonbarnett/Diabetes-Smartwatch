@@ -9,28 +9,30 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers
 
 # ---- CONFIG ----
-FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features_5s_nonlin.csv'
+FILTERED_FILE = './processed_data/vitaldb_ppg_ecg_extracted_features_15s_nonlin.csv'
 CASEID_COL = 'caseid'
 MULTITASK = True  # <<---- Toggle between True (BG + BP) or False (BG only)
 
 # Targets
 if MULTITASK:
-    TARGET_COLS = ['preop_gluc', 'mean_bp', 'sys_bp', 'dys_bp']
+    TARGET_COLS = ['preop_gluc', 'mean_bp']
 else:
     TARGET_COLS = ['preop_gluc']
 
 # EXCLUDED_COL = [CASEID_COL]
-EXCLUDED_COL = [CASEID_COL, 'ppg_freq', 'ppg_first_deriv_min', 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 
+EXCLUDED_COL = [CASEID_COL, 'sys_bp', 'dys_bp', 'ppg_freq', 'ppg_first_deriv_min', 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 
                 'ecg_std_pp_interval_s', 'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 
                 'ecg_first_deriv_min', 'ecg_entropy', 'ecg_teager_energy', 'ecg_log_energy', 
                 'ecg_skew', 'ecg_iqr', 'ecg_spectral_entropy']
-BATCH_SIZE = 128
-EPOCHS = 10
-LEARNING_RATE = 15e-4
-DROPOUT = 0.5
+BATCH_SIZE = 32
+EPOCHS = 6
+LEARNING_RATE = 2e-4
+DROPOUT = 0.05
 # DNN_LAYERS = [512, 512, 256, 256, 256, 128, 128, 128, 64, 64, 64, 32, 32, 32, 16, 16, 16, 8, 8, 8] # 20 Layer
-# DNN_LAYERS = [256, 256, 128, 128, 64, 64, 32, 32, 16, 16]       # 10 Layer
-DNN_LAYERS = [256, 128, 64, 32, 16]                               # 5 Layer
+# DNN_LAYERS = [256, 256, 128, 128, 64, 64, 32, 32, 16, 16]      # 10 Layer
+# DNN_LAYERS = [256, 128, 64, 64, 32, 32, 16]                  # 7 Layer
+DNN_LAYERS = [64, 32, 16, 8, 4]                      # 5 Layer
+# DNN_LAYERS = [256, 128, 64, 32]
 # DNN_LAYERS = [128, 64, 32]
 
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -39,6 +41,12 @@ DEVICE = '/GPU:0' if physical_devices else '/CPU:0'
 # Root Mean Squared Error Helper Function
 def rmse(y_true, y_pred):
     return np.sqrt(mean_squared_error(y_true, y_pred))
+
+# Compute MAPE (on original scale)
+def mape(y_true, y_pred):
+    eps = 1e-8  # prevent divide-by-zero
+    return np.mean(np.abs((y_true - y_pred) / (y_true + eps))) * 100
+
 
 print("Hyperparameters:")
 print(f"Mode: {'Multi-Task' if MULTITASK else 'Single-Task'}")
@@ -56,17 +64,33 @@ print(f"Loaded shape: {df.shape}")
 features_to_use = [c for c in df.columns if c not in EXCLUDED_COL + TARGET_COLS]
 X = df[features_to_use].values.astype(np.float32)
 y = df[TARGET_COLS].values.astype(np.float32)
-caseids = df[CASEID_COL].values
 
 # To only print the first 10 features use: features: {features_to_use[:10]} ...
 print(f"Using {len(features_to_use)} features: {features_to_use}")
 
-# ----- Train/test split -----
-unique_caseids = np.unique(caseids)
-train_ids, test_ids = train_test_split(unique_caseids, test_size=0.2, random_state=42)
-train_mask = np.isin(caseids, train_ids)
-X_train, X_test = X[train_mask], X[~train_mask]
-y_train, y_test = y[train_mask], y[~train_mask]
+# ----- Train/test split ----- OLD CODE
+# unique_caseids = np.unique(caseids)
+# train_ids, test_ids = train_test_split(unique_caseids, test_size=0.2, random_state=42)
+# train_mask = np.isin(caseids, train_ids)
+# X_train, X_test = X[train_mask], X[~train_mask]
+# y_train, y_test = y[train_mask], y[~train_mask]
+
+# ---- Train/test split by caseID ----
+unique_ids = df[CASEID_COL].unique()
+train_ids, test_ids = train_test_split(unique_ids, test_size=0.2, random_state=42)
+
+# Boolean mask
+is_train = df[CASEID_COL].isin(train_ids)
+
+# Split
+df_train = df[is_train].copy()
+df_test  = df[~is_train].copy()
+X_train = df_train[features_to_use].values.astype(np.float32)
+X_test  = df_test[features_to_use].values.astype(np.float32)
+
+y_train = df_train[TARGET_COLS].values.astype(np.float32)
+y_test  = df_test[TARGET_COLS].values.astype(np.float32)
+
 print(f"Train: {X_train.shape[0]}, Test: {X_test.shape[0]}")
 
 # ----- Scaling -----
@@ -115,7 +139,7 @@ def multitask_loss(y_true, y_pred):
     else:
         return tf.reduce_mean(tf.square(y_true - y_pred))
     
-optimizer = optimizers.Adam(learning_rate=LEARNING_RATE)
+optimizer = optimizers.Nadam(learning_rate=LEARNING_RATE)
 model.compile(optimizer=optimizer, loss=multitask_loss)
 
 # ----- Training -----
@@ -133,24 +157,31 @@ y_pred_scaled = model.predict(X_test_scaled)
 y_pred = y_scaler.inverse_transform(y_pred_scaled)
 
 if MULTITASK:
-    bg_pred, meanbp_pred, sysbp_pred, dysbp_pred = y_pred.T
-    bg_true, meanbp_true, sysbp_true, dysbp_true = y_test_orig.T
+    bg_pred, meanbp_pred = y_pred.T
+    bg_true, meanbp_true = y_test_orig.T
+    # bg_pred, meanbp_pred, sysbp_pred, dysbp_pred = y_pred.T
+    # bg_true, meanbp_true, sysbp_true, dysbp_true = y_test_orig.T
 
     print("\n--- Multi-Task Regression Metrics ---")
     print(f"MAE Glucose:  {mean_absolute_error(bg_true, bg_pred):.2f} mg/dL")
+    print(f"MAPE Glucose:  {mape(bg_true, bg_pred):.2f}%")
     print(f"RMSE Glucose: {rmse(bg_true, bg_pred):.2f} mg/dL")
     print(f"MAE Mean BP:  {mean_absolute_error(meanbp_true, meanbp_pred):.2f} mmHg")
+    print(f"MAPE Mean BP:  {mape(meanbp_true, meanbp_pred):.2f}%")
     print(f"RMSE Mean BP: {rmse(meanbp_true, meanbp_pred):.2f} mmHg")
-    print(f"MAE Sys BP:   {mean_absolute_error(sysbp_true, sysbp_pred):.2f} mmHg")
-    print(f"RMSE Sys BP:  {rmse(sysbp_true, sysbp_pred):.2f} mmHg")
-    print(f"MAE Dys BP:   {mean_absolute_error(dysbp_true, dysbp_pred):.2f} mmHg")
-    print(f"RMSE Dys BP:  {rmse(dysbp_true, dysbp_pred):.2f} mmHg")
+    # print(f"MAE Sys BP:   {mean_absolute_error(sysbp_true, sysbp_pred):.2f} mmHg")
+    # print(f"MAPE Sys BP:  {mape(sysbp_true, sysbp_pred):.2f}%")
+    # print(f"RMSE Sys BP:  {rmse(sysbp_true, sysbp_pred):.2f} mmHg")
+    # print(f"MAE Dys BP:   {mean_absolute_error(dysbp_true, dysbp_pred):.2f} mmHg")
+    # print(f"MAPE Dys BP:  {mape(dysbp_true, dysbp_pred):.2f}%")
+    # print(f"RMSE Dys BP:  {rmse(dysbp_true, dysbp_pred):.2f} mmHg")
 else:
     bg_pred = y_pred.flatten()
     bg_true = y_test_orig.flatten()
     print("\n--- Single-Task Regression Metrics ---")
     print(f"MAE Glucose: {mean_absolute_error(bg_true, bg_pred):.2f} mg/dL")
     print(f"RMSE Glucose: {rmse(bg_true, bg_pred):.2f} mg/dL")
+    print(f"MAPE Glucose:  {mape(bg_true, bg_pred):.2f}%")
 
 # ----- Clarke Error Grid (BG only) -----
 def get_clarke_zone(ref, pred):
@@ -214,16 +245,10 @@ plt.fill([70, 70, 290], [180, 400, 400], color='orange', alpha=0.4)
 plt.fill([130, 180, 180], [0, 0, 70], color='orange', alpha=0.4)
 
 # Zone D: 
-# x: left, right, right, left
-# y: bottom, bottom, top, top
-
 plt.fill([0, 70, 70, 0], [70, 70, 180, 180], color='red', alpha=0.1)
 plt.fill([240, 400, 400, 240], [70, 70, 180, 180], color='red', alpha=0.1)
 
 # Zone E: 
-# plt.axhspan(180, max_val, xmin=0, xmax=70/400, color='purple', alpha=0.1)
-# plt.axhspan(0, 70, xmin=180/400, xmax=1, color='purple', alpha=0.1)
-
 plt.fill([0, 70, 70, 0], [180, 180, 400, 400], color='purple', alpha=0.1)
 plt.fill([180, 400, 400, 180], [0, 0, 70, 70], color='purple', alpha=0.1)
 
@@ -255,9 +280,12 @@ plt.legend(); plt.tight_layout(); plt.show()
 
 # ----- Plot Per-Task Scatter Trendlines -----
 if MULTITASK:
-    task_names = ['Glucose (mg/dL)', 'Mean BP (mmHg)', 'Systolic BP (mmHg)', 'Diastolic BP (mmHg)']
-    preds_list = [bg_pred, meanbp_pred, sysbp_pred, dysbp_pred]
-    trues_list = [bg_true, meanbp_true, sysbp_true, dysbp_true]
+    # task_names = ['Glucose (mg/dL)', 'Mean BP (mmHg)', 'Systolic BP (mmHg)', 'Diastolic BP (mmHg)']
+    # preds_list = [bg_pred, meanbp_pred, sysbp_pred, dysbp_pred]
+    # trues_list = [bg_true, meanbp_true, sysbp_true, dysbp_true]
+    task_names = ['Glucose (mg/dL)', 'Mean BP (mmHg)']
+    preds_list = [bg_pred, meanbp_pred]
+    trues_list = [bg_true, meanbp_true]
 
     plt.figure(figsize=(10, 6))
     for i, (true_vals, pred_vals, name) in enumerate(zip(trues_list, preds_list, task_names)):
@@ -296,7 +324,7 @@ else:
 
 # ----- Save model weights -----
 suffix = '_multitask' if MULTITASK else '_single'
-save_path = f'./model_weights/dnn_model_15s{suffix}.weights.h5'
+save_path = f'./model_weights/dnn_model_15s{suffix}.keras'
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
-model.save_weights(save_path)
+model.save(save_path)
 print(f"\nModel weights saved to {save_path}")
