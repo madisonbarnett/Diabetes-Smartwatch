@@ -1,6 +1,7 @@
 # TO DO NEXT SEMESTER:
 
 # Incorporate signal processing on the device (ESP 32 chip)
+# Update libraries to fit with ESP32 allowed libraries (update minmax scalar)
 # Update single task DNN to estimate blood pressure, then estimate blood glucose from the blood pressure estimation value
 # Convert single task to TFLite and C-Array
 # Improve accuracy and thoroughly test
