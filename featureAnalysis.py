@@ -60,7 +60,7 @@ plt.title('Feature Correlation Heatmap')
 plt.xticks(rotation=30, ha='right') 
 plt.show()
 
-
+bg_df.info()
 
 
 
