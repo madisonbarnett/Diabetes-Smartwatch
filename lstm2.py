@@ -24,10 +24,10 @@ SUFFIX        = '5s_nonlin'
 FILTERED_FILE = f'./processed_data/vitaldb_ppg_ecg_extracted_features_{SUFFIX}.csv'
 CASEID_COL    = "caseid"
 TARGET_COL    = "preop_gluc"
-STATIC_COLS   = ["age", "sex", "preop_dm", "weight", "height", "bmi"]
+STATIC_COLS   = ["age", "sex", "preop_dm", "weight", "height"]
 
-# Exclude ECG features
-EXCLUDED_COLS = ['mean_bp', 'sys_bp', 'dys_bp', 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s',
+# Exclude Case ID, BP, ECG, and redundant features
+EXCLUDED_COLS = ['caseid', 'bmi', 'mean_bp', 'sys_bp', 'dys_bp', 'ppg_freq', 'ppg_first_deriv_min', 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s',
                  'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min',
                  'ecg_entropy', 'ecg_teager_energy', 'ecg_log_energy', 'ecg_skew',
                  'ecg_iqr', 'ecg_spectral_entropy']
@@ -36,9 +36,9 @@ EXCLUDED_COLS = ['mean_bp', 'sys_bp', 'dys_bp', 'ecg_mean', 'ecg_std', 'ecg_mean
 MAX_T         = 192         # max sequence length (192 time-steps)
 LSTM_UNITS    = 32
 DENSE_UNITS   = 32         
-DROPOUT       = 0.5
+DROPOUT       = 0.1
 BATCH_SIZE    = 128
-EPOCHS        = 200
+EPOCHS        = 100
 PATIENCE_ES   = 15
 PATIENCE_LR   = 5
 SEED          = 42
