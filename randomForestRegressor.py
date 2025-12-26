@@ -2,6 +2,7 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
+from cega import cega
 
 # Load data into dataframe
 bg_df = pd.read_csv('processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv')
@@ -72,9 +73,11 @@ print(pred_test_rf_df)
 r2_rf_model_test = round(rf_model.score(X_test, y_test),2)
 print("R^2 Test: {}".format(r2_rf_model_test))
 
+# Perform CEGA classification and plotting
+cega(y_test, y_pred_test_rf)
+
 import joblib
 
-# Save the trained model
-''' NOTE: This model is over 1 GB - will be reduced when converted to C '''
-joblib.dump(rf_model, './model_weights/rf_glucose_model.pkl', compress=9)
+# Save the trained model (note: currently really large as of 12/26/2025)
+joblib.dump(rf_model, './model_weights/rf_glucose_model.pkl', compress=3)
 print("Model saved to model_weights folder as rf_glucose_model.pkl")
