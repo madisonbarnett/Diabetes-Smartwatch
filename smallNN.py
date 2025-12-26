@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score
+from cega import cega
 
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks
@@ -133,6 +134,10 @@ results_df = pd.DataFrame({
     'Predicted': y_pred_test.round(1)
 })
 print(results_df.sample(12))
+
+# Perform CEGA analysis and plot results
+print("\nGenerating Clarke Error Grid Analysis plot...")
+cega(y_test, y_pred_test)
 
 # ────────────────────────────────────────────────────────────────
 # 6. Save model (for later conversion to TFLite / C code)
