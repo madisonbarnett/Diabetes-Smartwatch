@@ -2,7 +2,9 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from cega import cega
+import matplotlib.pyplot as plt
 
 # Load data into dataframe
 bg_df = pd.read_csv('processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv')
@@ -73,11 +75,65 @@ print(pred_test_rf_df)
 r2_rf_model_test = round(rf_model.score(X_test, y_test),2)
 print("R^2 Test: {}".format(r2_rf_model_test))
 
+mae_rf_model_test = round(mean_absolute_error(y_test, y_pred_test_rf),2)
+mape_rf_model_test = round(mean_absolute_percentage_error(y_test, y_pred_test_rf)*100,2)
+print("MAE Test: {}".format(mae_rf_model_test), "mg/dL")
+print("MAPE Test: {}%".format(mape_rf_model_test), "\n")
+
 # Perform CEGA classification and plotting
 cega(y_test, y_pred_test_rf)
 
-import joblib
+# import joblib
 
 # Save the trained model (note: currently really large as of 12/26/2025)
-joblib.dump(rf_model, './model_weights/rf_glucose_model.pkl', compress=3)
-print("Model saved to model_weights folder as rf_glucose_model.pkl")
+# joblib.dump(rf_model, './model_weights/rf_glucose_model.pkl', compress=3)
+# print("Model saved to model_weights folder as rf_glucose_model.pkl")
+
+# Plot feature importance
+plt.close('all')
+plt.figure(figsize=(10,6))
+feat_importances = pd.Series(rf_model.feature_importances_, index = X_train.columns)
+feat_importances.nlargest(5).plot(kind='barh')
+plt.title('Random Forest Regressor Feature Importances')
+plt.xlabel('Importance Score')
+plt.ylabel('Features')
+plt.show()
+plt.close('all')
+
+train_x_if = X_train[['age', 'weight', 'height', 'preop_dm', 'mean_pp_interval_s']]  # Top 5 important features
+test_x_if = X_test[['age', 'weight', 'height', 'preop_dm', 'mean_pp_interval_s']]
+
+# Retrain model with important features only
+rf_model_if = RandomForestRegressor(
+    n_estimators=300,
+    random_state=42,
+    max_depth=None,
+    min_samples_split=2,
+    min_samples_leaf=1,
+    max_features='sqrt',
+    bootstrap=True,
+    n_jobs=-1,
+    warm_start=False
+)
+
+# Train model
+rf_model_if.fit(train_x_if, y_train)
+
+# Run model predictions
+y_pred_test_rf_if = rf_model_if.predict(test_x_if)
+
+# Evaluate model
+updated_pred = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred_test_rf_if})
+print(updated_pred)
+
+r2_updated = round(rf_model_if.score(test_x_if, y_test),2)
+print("R^2 Test: {}".format(r2_updated))
+
+mae_updated = round(mean_absolute_error(y_test, y_pred_test_rf_if),2)
+mape_updated = round(mean_absolute_percentage_error(y_test, y_pred_test_rf_if)*100,2)
+print("MAE Test: {}".format(mae_updated), "mg/dL")
+print("MAPE Test: {}%".format(mape_updated), "\n")
+
+# Perform CEGA classification and plotting
+plt.close('all')
+cega(y_test, y_pred_test_rf_if)
