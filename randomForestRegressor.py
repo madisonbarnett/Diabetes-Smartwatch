@@ -66,22 +66,23 @@ rf_model = RandomForestRegressor(
 rf_model.fit(X_train, y_train)
 
 # Run model predictions
-y_pred_test_rf = rf_model.predict(X_test)
+y_pred_test = rf_model.predict(X_test)
 
-# Evaluate model
-pred_test_rf_df = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred_test_rf})
-print(pred_test_rf_df)
+# Evaluate model using R^2, MAE, MAPE
+pred_df = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred_test})
+print(pred_df)  # Print handful of actual v predicted values in dataframe
 
-r2_rf_model_test = round(rf_model.score(X_test, y_test),2)
-print("R^2 Test: {}".format(r2_rf_model_test))
+r2_score = round(rf_model.score(X_test, y_test),2)
+print("R^2 Test: {}".format(r2_score))
 
-mae_rf_model_test = round(mean_absolute_error(y_test, y_pred_test_rf),2)
-mape_rf_model_test = round(mean_absolute_percentage_error(y_test, y_pred_test_rf)*100,2)
-print("MAE Test: {}".format(mae_rf_model_test), "mg/dL")
-print("MAPE Test: {}%".format(mape_rf_model_test), "\n")
+mae = round(mean_absolute_error(y_test, y_pred_test),2)
+print("MAE Test: {}".format(mae), "mg/dL")
+
+mape = round(mean_absolute_percentage_error(y_test, y_pred_test)*100,2)
+print("MAPE Test: {}%".format(mape), "\n")
 
 # Perform CEGA classification and plotting
-cega(y_test, y_pred_test_rf)
+cega(y_test, y_pred_test)
 
 # import joblib
 
@@ -120,20 +121,21 @@ rf_model_if = RandomForestRegressor(
 rf_model_if.fit(train_x_if, y_train)
 
 # Run model predictions
-y_pred_test_rf_if = rf_model_if.predict(test_x_if)
+y_pred_test_if = rf_model_if.predict(test_x_if)
 
 # Evaluate model
-updated_pred = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred_test_rf_if})
-print(updated_pred)
+updated_pred_df = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred_test_if})
+print(updated_pred_df)
 
-r2_updated = round(rf_model_if.score(test_x_if, y_test),2)
-print("R^2 Test: {}".format(r2_updated))
+r2_score_updated = round(rf_model_if.score(test_x_if, y_test),2)
+print("R^2 Test: {}".format(r2_score_updated))
 
-mae_updated = round(mean_absolute_error(y_test, y_pred_test_rf_if),2)
-mape_updated = round(mean_absolute_percentage_error(y_test, y_pred_test_rf_if)*100,2)
+mae_updated = round(mean_absolute_error(y_test, y_pred_test_if),2)
 print("MAE Test: {}".format(mae_updated), "mg/dL")
+
+mape_updated = round(mean_absolute_percentage_error(y_test, y_pred_test_if)*100,2)
 print("MAPE Test: {}%".format(mape_updated), "\n")
 
 # Perform CEGA classification and plotting
 plt.close('all')
-cega(y_test, y_pred_test_rf_if)
+cega(y_test, y_pred_test_if)
