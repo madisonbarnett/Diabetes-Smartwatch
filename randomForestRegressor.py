@@ -84,13 +84,9 @@ print("MAPE Test: {}%".format(mape), "\n")
 # Perform CEGA classification and plotting
 cega(y_test, y_pred_test)
 
-# import joblib
+# === Improve model by selecting important features only ===
 
-# Save the trained model (note: currently really large as of 12/26/2025)
-# joblib.dump(rf_model, './model_weights/rf_glucose_model.pkl', compress=3)
-# print("Model saved to model_weights folder as rf_glucose_model.pkl")
-
-# Plot feature importance
+# Plot feature importances
 plt.close('all')
 plt.figure(figsize=(10,6))
 feat_importances = pd.Series(rf_model.feature_importances_, index = X_train.columns)
@@ -139,3 +135,9 @@ print("MAPE Test: {}%".format(mape_updated), "\n")
 # Perform CEGA classification and plotting
 plt.close('all')
 cega(y_test, y_pred_test_if)
+
+import joblib 
+
+# Save model (can be compressed further with compress=9)
+joblib.dump(rf_model_if, './model_weights/rf_glucose_model.pkl', compress=3)
+print("Model saved to model_weights folder as rf_glucose_model.pkl")
