@@ -2,22 +2,20 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from cega import cega
+import matplotlib.pyplot as plt
 
 # Load data into dataframe
 bg_df = pd.read_csv('processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv')
 
-# Drop unwanted features
-bg_df = bg_df.drop(columns=[col for col in bg_df.columns if 'ecg' in col.lower()])
-bg_df = bg_df.drop('mean_bp', axis=1)   # Drop BP (no BP sensor on device)
-bg_df = bg_df.drop('sys_bp', axis=1)
-bg_df = bg_df.drop('dys_bp', axis=1)
-bg_df = bg_df.drop('ppg_freq', axis=1)
-bg_df = bg_df.drop('first_deriv_min', axis=1)
-bg_df = bg_df.drop('caseid', axis=1)    # Drop ID column (not a feature)
+# Drop unwanted features (keeping only 5 most important features, as determined in previous RFR experiments)
+drop_cols = [col for col in bg_df.columns if 'ecg' in col.lower()]
+drop_cols = drop_cols + ['mean_bp', 'sys_bp', 'dys_bp', 'ppg_freq', 'first_deriv_min', 'caseid', 'sex', 'ppg_mean', 'ppg_std', 'std_pp_interval_s', 'auc', 'first_deriv_max', 'entropy']
+bg_df = bg_df.drop(columns=drop_cols)
 
 # Split feature variables and target variable
-X = bg_df[['age', 'sex', 'preop_dm', 'weight', 'height', 'ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
-            'auc', 'first_deriv_max', 'entropy']]
+X = bg_df[['age', 'preop_dm', 'weight', 'height', 'mean_pp_interval_s']]
 y = bg_df['preop_gluc']
 
 # Split data into training and testing sets (80/20)
@@ -42,18 +40,25 @@ rf_model = RandomForestRegressor(
 rf_model.fit(X_train, y_train)
 
 # Run model predictions
-y_pred_test_rf = rf_model.predict(X_test)
+y_pred_test = rf_model.predict(X_test)
 
 # Evaluate model
-pred_test_rf_df = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred_test_rf})
-print(pred_test_rf_df)
+pred_test_df = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred_test})
+print(pred_test_df, "\n")
 
 r2_rf_model_test = round(rf_model.score(X_test, y_test),2)
 print("R^2 Test: {}".format(r2_rf_model_test))
 
-import joblib
+mae = round(mean_absolute_error(y_test, y_pred_test),2)
+print("MAE Test: {}".format(mae), "mg/dL")
+
+mape = round(mean_absolute_percentage_error(y_test, y_pred_test)*100,2)
+print("MAPE Test: {}%".format(mape), "\n")
+
+cega(y_test, y_pred_test)
 
 # Save the trained model
-''' NOTE: This model is over 1 GB - will be reduced when converted to C '''
+import joblib
+
 joblib.dump(rf_model, './model_weights/small_rf_glucose_model.pkl', compress=9)
 print("Model saved to model_weights folder as small_rf_glucose_model.pkl")

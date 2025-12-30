@@ -8,8 +8,9 @@ import time
 start_time = time.time()
 
 # Load model
-# Latest model pkl file size: ~72 MB
-MODEL_NAME = 'rf_glucose_model'
+# Latest large RFR model pkl file size: ~72 MB
+# Latest small RFR model pkl file size: ~0.258 MB
+MODEL_NAME = 'small_rf_glucose_model'
 model = joblib.load(f'./model_weights/{MODEL_NAME}.pkl')
 print(f"Model '{MODEL_NAME}' loaded!")
 
@@ -31,5 +32,5 @@ elapsed_seconds = int(elapsed_time % 60)
 
 print(f"Total program time: {elapsed_hours} hours, {elapsed_minutes} minutes, {elapsed_seconds} seconds")
 
-# Latest C file size: ~963 MB
-# Program time: 8 min 31 sec
+# Latest large RFR C file size: ~963 MB (8 min 31 sec)
+# Latest small RFR C file size: ~1.31 MB (0 min 15 sec)
