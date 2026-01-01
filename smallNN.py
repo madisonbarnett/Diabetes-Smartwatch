@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, mean_absolute_percentage_error
 from cega import cega
 
 import tensorflow as tf
@@ -53,16 +53,20 @@ print(f"Testing samples:  {X_test.shape[0]}")
 def build_small_glucose_model(input_dim):
     model = models.Sequential([
         layers.Input(shape=(input_dim,)),
+
+        layers.Dense(128, activation='gelu'),
+        layers.BatchNormalization(),
+        layers.Dropout(0.30),
         
-        layers.Dense(48, activation='relu'),   # wider first layer helps capture more
+        layers.Dense(64, activation='gelu'),   
         layers.BatchNormalization(),
         layers.Dropout(0.25),
         
-        layers.Dense(32, activation='relu'),
+        layers.Dense(32, activation='gelu'),
         layers.BatchNormalization(),
         layers.Dropout(0.20),
         
-        layers.Dense(16, activation='relu'),
+        layers.Dense(16, activation='gelu'),
         layers.Dense(1, activation='linear')
     ])
     
@@ -120,11 +124,13 @@ y_pred_test = model.predict(X_test, verbose=0).flatten()
 
 r2_test = r2_score(y_test, y_pred_test)
 mae_test = np.mean(np.abs(y_test - y_pred_test))
+mape_test = mean_absolute_percentage_error(y_test, y_pred_test) * 100
 
 print("\n" + "="*60)
 print(f"Neural Network Results on Test set:")
 print(f"    R²  : {r2_test:.3f}")
 print(f"    MAE : {mae_test:.2f} mg/dL")
+print(f"    MAPE: {mape_test:.2f}%")
 print("="*60)
 
 # Optional: quick comparison table
