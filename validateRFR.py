@@ -1,5 +1,6 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split, GroupKFold, cross_validate
+import numpy as np
+from sklearn.model_selection import GroupKFold, cross_validate, LeavePGroupsOut
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from cega import cega
@@ -11,25 +12,25 @@ bg_df = pd.read_csv('processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv')
 # Split feature variables and target variable
 features = ['age', 'sex', 'preop_dm', 'weight', 'height', 'ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
             'auc', 'first_deriv_max', 'entropy']
-X = bg_df[features]
-y = bg_df['preop_gluc']
+X = bg_df[features].copy()
+y = bg_df['preop_gluc'].copy()
 
 # Group data by caseid to prevent data leakage
-groups = bg_df['caseid']
+groups = bg_df['caseid'].values
 
 rf_model = RandomForestRegressor(
-    n_estimators=300,          # Good default: more trees = more stable predictions
-    random_state=42,           # Always set for reproducibility
-    max_depth=None,            # Let trees grow fully (good default for RF)
-    min_samples_split=2,       # Default is fine
-    min_samples_leaf=1,        # Default is fine
-    max_features='sqrt',       # Key parameter: sqrt(12) ≈ 3-4 features per split
-    bootstrap=True,            # Default: use bootstrapping
-    n_jobs=-1,                 # Use all CPU cores for faster training
-    warm_start=False           # Not needed unless incrementally training
+    n_estimators=100,          
+    random_state=42,           
+    max_depth=6,            
+    min_samples_split=10,       
+    min_samples_leaf=5,       
+    max_features=0.4,       
+    bootstrap=True,            
+    n_jobs=-1         
 )
 
-gkf = GroupKFold(n_splits=10)
+# gkf = GroupKFold(n_splits=10)
+logo = LeavePGroupsOut(n_groups = 5) 
 
 scoring = {
     'r2': 'r2',
@@ -40,7 +41,8 @@ scoring = {
 cv_results = cross_validate(
     rf_model,
     X, y,
-    cv = gkf,
+    # cv = gkf,
+    cv = logo,
     groups = groups,
     scoring = scoring,
     return_train_score = True,
