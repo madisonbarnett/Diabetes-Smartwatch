@@ -50,10 +50,18 @@ aggregated.columns = [
     for col in aggregated.columns.values
 ]
 
-aggregated = aggregated.rename(
-    columns=lambda c: c.replace('_mean', '_avg')
-                      .replace('_std', '_variability')
-)
+# Rename columns to avoid feature name vs statistic confusion (e.g., ppg_mean_mean → ppg_mean_avg)
+# mean statistic -> avg, std statistic -> variability
+rename_dict = {}
+for col in aggregated.columns:
+    new_col = col
+    if col.endswith('_mean'):
+        new_col = col[:-5] + '_avg'    
+    if col.endswith('_std'):
+        new_col = col[:-4] + '_variability'
+    rename_dict[col] = new_col
+
+aggregated = aggregated.rename(columns=rename_dict)
 
 # Reset index so caseid becomes a regular column again
 aggregated = aggregated.reset_index()
