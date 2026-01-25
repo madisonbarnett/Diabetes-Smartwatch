@@ -1,5 +1,4 @@
-# Small Neural Network for Blood Glucose Regression
-# Target: small enough for microcontroller deployment after quantization
+# Neural network, blood glucose regression
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -11,31 +10,38 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks
 from tensorflow.keras.optimizers import Adam
 
-print("TensorFlow version:", tf.__version__)
+# Load dataset into dataframe
+SUFFIX        = '30s'
+DATASET       = 'PhysioNet'
+# bg_df = pd.read_csv('processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv')
+bg_df = pd.read_csv('processed_data/physioNet_ppg_extracted_features_30s.csv')
 
-# ────────────────────────────────────────────────────────────────
-# 1. Load and prepare data (same as your original)
-# ────────────────────────────────────────────────────────────────
-bg_df = pd.read_csv('processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv')
 
-# Drop unwanted columns (same logic as yours)
-drop_cols = [col for col in bg_df.columns if 'ecg' in col.lower()]
-drop_cols.extend(['mean_bp', 'sys_bp', 'dys_bp', 'ppg_freq', 
-                  'first_deriv_min', 'caseid'])
+# Drop unwanted columns
+# drop_cols = [col for col in bg_df.columns if 'ecg' in col.lower()]
+# drop_cols.extend(['mean_bp', 'sys_bp', 'dys_bp', 'ppg_freq', 
+#                   'first_deriv_min', 'caseid'])
+
+drop_cols = ['ppg_freq', 'patient_id'] # ppg_freq redundant, patient_id not a feature
 
 bg_df = bg_df.drop(columns=drop_cols)
 
-# Features & target
-feature_cols = [
-    'age', 'sex', 'preop_dm', 'weight', 'height',
-    'ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
-    'auc', 'first_deriv_max', 'entropy'
-]
+# # Features & target
+# feature_cols = [
+#     'age', 'sex', 'preop_dm', 'weight', 'height',
+#     'ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
+#     'auc', 'first_deriv_max', 'entropy'
+# ]
+
+feature_cols = ['sex', 'ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s', 'ppg_std_pp_interval_s', 
+                'ppg_auc', 'ppg_first_deriv_max', 'ppg_first_deriv_min', 'ppg_entropy', 
+                'ppg_teager_energy', 'ppg_log_energy', 'ppg_skew', 'ppg_iqr', 'ppg_spectral_entropy']
 
 X = bg_df[feature_cols].values.astype(np.float32)
-y = bg_df['preop_gluc'].values.astype(np.float32)
+# y = bg_df['preop_gluc'].values.astype(np.float32)
+y = bg_df['glucose_mg_dl'].values.astype(np.float32)
 
-# Very important for neural networks: Feature scaling!
+# Perform feature scaling
 scaler = StandardScaler()
 X = scaler.fit_transform(X)
 
@@ -47,33 +53,31 @@ X_train, X_test, y_train, y_test = train_test_split(
 print(f"Training samples: {X_train.shape[0]}, Features: {X_train.shape[1]}")
 print(f"Testing samples:  {X_test.shape[0]}")
 
-# ────────────────────────────────────────────────────────────────
-# 2. Define a small, microcontroller-friendly MLP
-# ────────────────────────────────────────────────────────────────
+# Small MLP
 def build_small_glucose_model(input_dim):
     model = models.Sequential([
         layers.Input(shape=(input_dim,)),
 
-        layers.Dense(128, activation='gelu'),
+        layers.Dense(128, activation='relu'),
         layers.BatchNormalization(),
         layers.Dropout(0.30),
         
-        layers.Dense(64, activation='gelu'),   
+        layers.Dense(64, activation='relu'),   
         layers.BatchNormalization(),
         layers.Dropout(0.25),
         
-        layers.Dense(32, activation='gelu'),
+        layers.Dense(32, activation='relu'),
         layers.BatchNormalization(),
         layers.Dropout(0.20),
         
-        layers.Dense(16, activation='gelu'),
+        layers.Dense(16, activation='relu'),
         layers.Dense(1, activation='linear')
     ])
     
     model.compile(
         optimizer=Adam(learning_rate=0.0015),
-        loss='mse',
-        metrics=['mae']
+        loss='mae',
+        metrics=['mae', 'mape']
     )
     
     return model
@@ -84,9 +88,7 @@ input_dim = X_train.shape[1]
 model = build_small_glucose_model(input_dim)
 model.summary()
 
-# ────────────────────────────────────────────────────────────────
-# 3. Callbacks - very helpful for small/medium datasets
-# ────────────────────────────────────────────────────────────────
+# Training callbacks
 callbacks_list = [
     callbacks.EarlyStopping(
         monitor='val_loss',
@@ -105,9 +107,7 @@ callbacks_list = [
     # callbacks.ModelCheckpoint("best_model.keras", monitor='val_loss', save_best_only=True)
 ]
 
-# ────────────────────────────────────────────────────────────────
-# 4. Train
-# ────────────────────────────────────────────────────────────────
+# Train model
 history = model.fit(
     X_train, y_train,
     validation_split=0.15,          # small validation set from training
@@ -117,9 +117,7 @@ history = model.fit(
     callbacks=callbacks_list
 )
 
-# ────────────────────────────────────────────────────────────────
-# 5. Evaluate
-# ────────────────────────────────────────────────────────────────
+# Evaluate model on test set
 y_pred_test = model.predict(X_test, verbose=0).flatten()
 
 r2_test = r2_score(y_test, y_pred_test)
@@ -145,13 +143,11 @@ print(results_df.sample(12))
 print("\nGenerating Clarke Error Grid Analysis plot...")
 cega(y_test, y_pred_test)
 
-# ────────────────────────────────────────────────────────────────
-# 6. Save model (for later conversion to TFLite / C code)
-# ────────────────────────────────────────────────────────────────
-model.save("model_weights/glucose_mlp.keras")
-print("Keras model saved → glucose_mlp.keras")
+# Save trained model
+model.save(f"model_weights/mlp_{SUFFIX}_{DATASET}.keras")
+print(f"Keras model saved as mlp_{SUFFIX}_{DATASET}.keras")
 
-# Also save the scaler (critical!)
+# Save scalers
 import joblib
-joblib.dump(scaler, "model_weights/feature_scaler.pkl")
-print("Feature scaler saved → feature_scaler.pkl")
+joblib.dump(scaler, f"model_weights/mlp_feature_scaler_{SUFFIX}_{DATASET}.pkl")
+print(f"Feature scaler saved as feature_scaler_{SUFFIX}_{DATASET}.pkl")
