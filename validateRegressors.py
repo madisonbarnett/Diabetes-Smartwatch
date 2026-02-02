@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from xgboost import XGBRegressor
 from sklearn.model_selection import GroupShuffleSplit, GroupKFold, cross_validate, KFold
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score, mean_absolute_error, mean_absolute_percentage_error
@@ -9,14 +10,14 @@ from cega import cega
 import time 
 
 # Define parameters for easy reuse or substitution
-DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
+DATASET = 'physionet' # 'vitaldb' or 'physionet'
 DATAFILE = 'processed_data/vitaldb_ppg_ecg_extracted_features_30s.csv' if DATASET == 'vitaldb' else 'processed_data/physioNet_ppg_extracted_features_30s.csv'
 GLUC = 'preop_gluc' if DATASET == 'vitaldb' else 'glucose_mg_dl'  # Target variable
 ID = 'caseid' if DATASET == 'vitaldb' else 'patient_id'      # Grouping variable to prevent data leakage
 
 # Load data into dataframe
 bg_df = pd.read_csv(DATAFILE)
-print(f"Successfully loaded data (shape: {bg_df.shape})")
+print(f"Successfully loaded data from {DATASET} (shape: {bg_df.shape})")
 groups = bg_df[ID].values
 
 # Split into development + final test   (patient-disjoint)
@@ -63,6 +64,16 @@ rf_model = RandomForestRegressor(
     n_jobs=-1
 )
 
+xgb_model = XGBRegressor(
+    n_estimators=300,
+    learning_rate=0.1,
+    max_depth=10,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    random_state=42,
+    n_jobs=-1
+)
+
 # Perform cross-validation on dev set
 print("\nStarting GroupKFold CV on dev set (10 folds)...")
 gkf = GroupKFold(n_splits=10)
@@ -75,7 +86,7 @@ scoring = {
 
 start_time = time.time()
 cv_results = cross_validate(
-    rf_model,
+    xgb_model,
     X_dev_scaled, y_dev,
     cv=gkf,
     groups=df_dev[ID].values,  # Keep cases together
@@ -97,9 +108,9 @@ for metric in ['r2', 'mae', 'mape']:
 
 # Train final model on full dev set and evaluate on test set
 print("\nTraining final model on full dev set...")
-rf_model.fit(X_dev_scaled, y_dev)
+xgb_model.fit(X_dev_scaled, y_dev)
 
-y_pred_test = rf_model.predict(X_test_scaled)
+y_pred_test = xgb_model.predict(X_test_scaled)
 
 r2_test   = r2_score(y_test, y_pred_test)
 mae_test  = mean_absolute_error(y_test, y_pred_test)
