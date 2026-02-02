@@ -10,10 +10,10 @@ from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error,
 from sklearn.model_selection import train_test_split
 
 # ---- CONFIG ----
-CSV = './processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv'
-CASEID_COL = 'caseid'
-TARGET_COL = 'preop_gluc'   # Replace with 'glucose' or other if needed
-EXCLUDED_COL = [CASEID_COL, TARGET_COL, 'ecg_mean', 'ecg_std', 'ecg_mean_pp_interval_s', 'ecg_std_pp_interval_s', 'ecg_freq', 'ecg_auc', 'ecg_first_deriv_max', 'ecg_first_deriv_min', 'ecg_entropy']
+CSV = './processed_data/physioNet_ppg_extracted_features_30s.csv'
+CASEID_COL = 'patient_id'
+TARGET_COL = 'glucose_mg_dl'   # Replace with 'glucose' or other if needed
+EXCLUDED_COL = [CASEID_COL, TARGET_COL]
 
 # ---- Load and clean ----
 df = pd.read_csv(CSV).dropna()
