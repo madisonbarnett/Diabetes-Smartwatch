@@ -1,7 +1,7 @@
 # Neural network, blood glucose regression
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
 from cega import cega
@@ -10,48 +10,69 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks
 from tensorflow.keras.optimizers import Adam
 
-# Load dataset into dataframe
+# Define parameters for easy reuse or substitution
+DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
+DATAFILE = 'processed_data/vitaldb_ppg_ecg_extracted_features_30s.csv' if DATASET == 'vitaldb' else 'processed_data/physioNet_ppg_extracted_features_30s.csv'
+GLUC = 'preop_gluc' if DATASET == 'vitaldb' else 'glucose_mg_dl'  # Target variable
+ID = 'caseid' if DATASET == 'vitaldb' else 'patient_id'      # Grouping variable to prevent data leakage
 SUFFIX        = '30s'
-DATASET       = 'PhysioNet'
-# bg_df = pd.read_csv('processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv')
-bg_df = pd.read_csv('processed_data/physioNet_ppg_extracted_features_30s.csv')
 
+# Load dataset into dataframe
+bg_df = pd.read_csv(DATAFILE)
+print(f"Successfully loaded data from {DATASET} (shape: {bg_df.shape})")
+groups = bg_df[ID].values
+
+# Split into train + test  
+gss = GroupShuffleSplit(n_splits=1, test_size=0.1875, random_state=42)
+train_idx, test_idx = next(gss.split(bg_df, groups=groups))
+
+df_train  = bg_df.iloc[train_idx].copy()
+df_test = bg_df.iloc[test_idx].copy()
+
+print(f"Dev patients:   {df_train[ID].nunique()}")
+print(f"Test patients:  {df_test[ID].nunique()}")
+print(f"Dev rows:       {len(df_train):,}")
+print(f"Test rows:      {len(df_test):,}")
 
 # Drop unwanted columns
-# drop_cols = [col for col in bg_df.columns if 'ecg' in col.lower()]
-# drop_cols.extend(['mean_bp', 'sys_bp', 'dys_bp', 'ppg_freq', 
-#                   'first_deriv_min', 'caseid'])
+drop_cols_vdb = [col for col in bg_df.columns if 'ecg' in col.lower()]
+drop_cols_vdb.extend(['mean_bp', 'sys_bp', 'dys_bp', 'ppg_freq', 
+                  'first_deriv_min', 'caseid'])
 
-drop_cols = ['ppg_freq', 'patient_id'] # ppg_freq redundant, patient_id not a feature
+drop_cols_physio = ['ppg_freq', 'patient_id'] # ppg_freq redundant, patient_id not a feature
 
+drop_cols = drop_cols_vdb if DATASET == 'vitaldb' else drop_cols_physio
 bg_df = bg_df.drop(columns=drop_cols)
 
 # # Features & target
-# feature_cols = [
-#     'age', 'sex', 'preop_dm', 'weight', 'height',
-#     'ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
-#     'auc', 'first_deriv_max', 'entropy'
-# ]
+features_vdb = [
+    'age', 'sex', 'preop_dm', 'weight', 'height',
+    'ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
+    'auc', 'first_deriv_max', 'entropy'
+]
 
-feature_cols = ['sex', 'ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s', 'ppg_std_pp_interval_s', 
+features_physio = ['sex', 'ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s', 'ppg_std_pp_interval_s', 
                 'ppg_auc', 'ppg_first_deriv_max', 'ppg_first_deriv_min', 'ppg_entropy', 
                 'ppg_teager_energy', 'ppg_log_energy', 'ppg_skew', 'ppg_iqr', 'ppg_spectral_entropy']
 
-X = bg_df[feature_cols].values.astype(np.float32)
-# y = bg_df['preop_gluc'].values.astype(np.float32)
-y = bg_df['glucose_mg_dl'].values.astype(np.float32)
+if DATASET == 'vitaldb':
+    features = features_vdb
+elif DATASET == 'physionet':
+    features = features_physio
 
-# Perform feature scaling
+X_train  = df_train[features].values.astype(np.float32)
+y_train  = df_train[GLUC].values.astype(np.float32)
+
+X_test = df_test[features].values.astype(np.float32)
+y_test = df_test[GLUC].values.astype(np.float32)
+
+# Scale only on training set
 scaler = StandardScaler()
-X = scaler.fit_transform(X)
+X_train_scaled  = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
-# Train / Test split
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, shuffle=True
-)
-
-print(f"Training samples: {X_train.shape[0]}, Features: {X_train.shape[1]}")
-print(f"Testing samples:  {X_test.shape[0]}")
+print(f"Training samples: {X_train_scaled.shape[0]}, Features: {X_train_scaled.shape[1]}")
+print(f"Testing samples:  {X_test_scaled.shape[0]}")
 
 # Small MLP
 def build_small_glucose_model(input_dim):
@@ -84,7 +105,7 @@ def build_small_glucose_model(input_dim):
 
 
 # Create model
-input_dim = X_train.shape[1]
+input_dim = X_train_scaled.shape[1]
 model = build_small_glucose_model(input_dim)
 model.summary()
 
@@ -109,7 +130,7 @@ callbacks_list = [
 
 # Train model
 history = model.fit(
-    X_train, y_train,
+    X_train_scaled, y_train,
     validation_split=0.15,          # small validation set from training
     epochs=100,
     batch_size=64,                  # relatively small batch → better generalization on small data
@@ -118,7 +139,7 @@ history = model.fit(
 )
 
 # Evaluate model on test set
-y_pred_test = model.predict(X_test, verbose=0).flatten()
+y_pred_test = model.predict(X_test_scaled, verbose=0).flatten()
 
 r2_test = r2_score(y_test, y_pred_test)
 mae_test = np.mean(np.abs(y_test - y_pred_test))
