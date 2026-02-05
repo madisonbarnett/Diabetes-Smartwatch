@@ -5,13 +5,14 @@ from sklearn.model_selection import train_test_split, GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
 from cega import cega
+import time
 
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks
 from tensorflow.keras.optimizers import Adam
 
 # Define parameters for easy reuse or substitution
-DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
+DATASET = 'physionet' # 'vitaldb' or 'physionet'
 DATAFILE = 'processed_data/vitaldb_ppg_ecg_extracted_features_30s.csv' if DATASET == 'vitaldb' else 'processed_data/physioNet_ppg_extracted_features_30s.csv'
 GLUC = 'preop_gluc' if DATASET == 'vitaldb' else 'glucose_mg_dl'  # Target variable
 ID = 'caseid' if DATASET == 'vitaldb' else 'patient_id'      # Grouping variable to prevent data leakage
@@ -22,8 +23,8 @@ bg_df = pd.read_csv(DATAFILE)
 print(f"Successfully loaded data from {DATASET} (shape: {bg_df.shape})")
 groups = bg_df[ID].values
 
-# Split into train + test  
-gss = GroupShuffleSplit(n_splits=1, test_size=0.1875, random_state=42)
+# Split into train+val and test  
+gss = GroupShuffleSplit(n_splits=1, test_size=3/16, random_state=42)
 train_idx, test_idx = next(gss.split(bg_df, groups=groups))
 
 df_train  = bg_df.iloc[train_idx].copy()
@@ -74,6 +75,25 @@ X_test_scaled = scaler.transform(X_test)
 print(f"Training samples: {X_train_scaled.shape[0]}, Features: {X_train_scaled.shape[1]}")
 print(f"Testing samples:  {X_test_scaled.shape[0]}")
 
+print("Splitting training data into actual train + validation sets...")
+
+# Split training into actual train + validation (val used for representative data set during quantization)
+gss_val = GroupShuffleSplit(n_splits=1, test_size=3/13, random_state=42)
+train_actual_idx, val_idx = next(gss_val.split(
+    X_train_scaled, 
+    groups=df_train[ID].values
+))
+
+X_train_actual = X_train_scaled[train_actual_idx]
+y_train_actual = y_train[train_actual_idx]
+
+X_val = X_train_scaled[val_idx]
+y_val = y_train[val_idx]
+
+print(f"Actual training samples: {X_train_actual.shape[0]}")
+print(f"Validation   samples:    {X_val.shape[0]}")
+print(f"Test         samples:    {X_test_scaled.shape[0]}")
+
 # Small MLP
 def build_small_glucose_model(input_dim):
     model = models.Sequential([
@@ -105,7 +125,7 @@ def build_small_glucose_model(input_dim):
 
 
 # Create model
-input_dim = X_train_scaled.shape[1]
+input_dim = X_train_actual.shape[1]
 model = build_small_glucose_model(input_dim)
 model.summary()
 
@@ -129,11 +149,12 @@ callbacks_list = [
 ]
 
 # Train model
+print("Starting model training!")
 history = model.fit(
-    X_train_scaled, y_train,
-    validation_split=0.15,          # small validation set from training
+    X_train_actual, y_train_actual,
+    validation_data=(X_val, y_val),           
     epochs=100,
-    batch_size=64,                  # relatively small batch → better generalization on small data
+    batch_size=64,
     verbose=1,
     callbacks=callbacks_list
 )
@@ -146,29 +167,79 @@ mae_test = np.mean(np.abs(y_test - y_pred_test))
 mape_test = mean_absolute_percentage_error(y_test, y_pred_test) * 100
 
 print("\n" + "="*60)
-print(f"Neural Network Results on Test set:")
+print(f"MLP results on TEST set:")
 print(f"    R²  : {r2_test:.3f}")
 print(f"    MAE : {mae_test:.2f} mg/dL")
 print(f"    MAPE: {mape_test:.2f}%")
 print("="*60)
 
-# Optional: quick comparison table
-import pandas as pd
-results_df = pd.DataFrame({
-    'Actual': y_test,
-    'Predicted': y_pred_test.round(1)
-})
-print(results_df.sample(12))
+# # Optional: quick comparison table
+# import pandas as pd
+# results_df = pd.DataFrame({
+#     'Actual': y_test,
+#     'Predicted': y_pred_test.round(1)
+# })
+# print(results_df.sample(12))
 
 # Perform CEGA analysis and plot results
 print("\nGenerating Clarke Error Grid Analysis plot...")
 cega(y_test, y_pred_test)
 
-# Save trained model
-model.save(f"model_weights/mlp_{SUFFIX}_{DATASET}.keras")
-print(f"Keras model saved as mlp_{SUFFIX}_{DATASET}.keras")
+# # Save trained model
+# model.save(f"model_weights/mlp_{SUFFIX}_{DATASET}.keras")
+# print(f"Keras model saved as mlp_{SUFFIX}_{DATASET}.keras")
 
-# Save scalers
-import joblib
-joblib.dump(scaler, f"model_weights/mlp_feature_scaler_{SUFFIX}_{DATASET}.pkl")
-print(f"Feature scaler saved as feature_scaler_{SUFFIX}_{DATASET}.pkl")
+# # Save scalers
+# import joblib
+# joblib.dump(scaler, f"model_weights/mlp_feature_scaler_{SUFFIX}_{DATASET}.pkl")
+# print(f"Feature scaler saved as feature_scaler_{SUFFIX}_{DATASET}.pkl")
+
+# Convert model (not scalers yet) to C
+# import emlearn
+# start_conversion = time.time()
+# cmodel = emlearn.convert(model, method='loadable')
+# cmodel.save(file=f"model_weights/mlp.h", name="mlp")
+# end_conversion = time.time()
+# print(f"Saved model as .h file (conversion took {end_conversion - start_conversion:.1f} seconds)")
+
+def representative_dataset():
+    """
+    Generator that yields validation samples for calibration.
+    Must return list of arrays with shape [1, n_features], float32.
+    200–300 samples is typically enough for good quantization quality.
+    """
+    NUM_CALIBRATION_SAMPLES = 300
+    num_samples = min(NUM_CALIBRATION_SAMPLES, len(X_val))
+    
+    for i in range(num_samples):
+        # Yield single sample with batch dimension [1, features]
+        yield [X_val[i:i+1].astype(np.float32)]
+
+print("Starting TFLite quantization...")
+start_quantization = time.time()
+
+# Quantization settings
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_types = [tf.int8]
+converter.inference_input_type = tf.int8
+converter.inference_output_type = tf.int8
+converter.representative_dataset = representative_dataset
+
+tflite_model = converter.convert()
+
+# Save quantized model
+OUTFILE = f'model_weights/mlp_{SUFFIX}_{DATASET}_int8.tflite'
+with open(OUTFILE, "wb") as f:
+    f.write(tflite_model)
+
+end_quantization = time.time()
+print(f"Saved model as {OUTFILE}")
+print(f"Model quantization took {end_quantization - start_quantization:.1f} seconds")
+
+# Check model size
+import os
+if os.path.exists(OUTFILE):
+    print(f"Quantized model size: {os.path.getsize(OUTFILE)/1024:.1f} KB")
+else:
+    print(f"Error: Unable to determine file size (does the quantized model exist?)")

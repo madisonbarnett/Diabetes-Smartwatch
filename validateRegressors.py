@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from xgboost import XGBRegressor
-from sklearn.model_selection import GroupShuffleSplit, GroupKFold, cross_validate, KFold
+from sklearn.model_selection import GroupShuffleSplit, GroupKFold, cross_validate
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score, mean_absolute_error, mean_absolute_percentage_error
 from sklearn.preprocessing import StandardScaler
@@ -21,7 +21,7 @@ print(f"Successfully loaded data from {DATASET} (shape: {bg_df.shape})")
 groups = bg_df[ID].values
 
 # Split into development + final test   (patient-disjoint)
-gss = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
+gss = GroupShuffleSplit(n_splits=1, test_size=0.1875, random_state=42)
 dev_idx, test_idx = next(gss.split(bg_df, groups=groups))
 
 df_dev  = bg_df.iloc[dev_idx].copy()
@@ -74,43 +74,43 @@ xgb_model = XGBRegressor(
     n_jobs=-1
 )
 
-# Perform cross-validation on dev set
-print("\nStarting GroupKFold CV on dev set (10 folds)...")
-gkf = GroupKFold(n_splits=10)
+# # Perform cross-validation on dev set
+# print("\nStarting GroupKFold CV on dev set (10 folds)...")
+# gkf = GroupKFold(n_splits=10)
 
-scoring = {
-    'r2': 'r2',
-    'mae': 'neg_mean_absolute_error',
-    'mape': 'neg_mean_absolute_percentage_error'
-}
+# scoring = {
+#     'r2': 'r2',
+#     'mae': 'neg_mean_absolute_error',
+#     'mape': 'neg_mean_absolute_percentage_error'
+# }
 
-start_time = time.time()
-cv_results = cross_validate(
-    xgb_model,
-    X_dev_scaled, y_dev,
-    cv=gkf,
-    groups=df_dev[ID].values,  # Keep cases together
-    scoring=scoring,
-    return_train_score=True,
-    n_jobs=-1
-)
-elapsed = time.time() - start_time
+# start_time = time.time()
+# cv_results = cross_validate(
+#     xgb_model,
+#     X_dev_scaled, y_dev,
+#     cv=gkf,
+#     groups=df_dev[ID].values,  # Keep cases together
+#     scoring=scoring,
+#     return_train_score=True,
+#     n_jobs=-1
+# )
+# elapsed = time.time() - start_time
 
-print(f"CV completed in {elapsed:.1f} seconds")
-print("CV results (mean ± std over 10 folds):")
-for metric in ['r2', 'mae', 'mape']:
-    train_key = f'train_{metric}'
-    test_key  = f'test_{metric}'
-    train_mean, train_std = cv_results[train_key].mean(), cv_results[train_key].std()
-    test_mean,  test_std  = cv_results[test_key].mean(),  cv_results[test_key].std()
-    sign = '+' if metric in ['mae', 'mape'] else ''  # neg metrics are negative
-    print(f"{metric.upper():<6} - Train: {train_mean:.4f} ± {train_std:.4f} | Test: {test_mean:.4f} ± {test_std:.4f}")
+# print(f"CV completed in {elapsed:.1f} seconds")
+# print("CV results (mean ± std over 10 folds):")
+# for metric in ['r2', 'mae', 'mape']:
+#     train_key = f'train_{metric}'
+#     test_key  = f'test_{metric}'
+#     train_mean, train_std = cv_results[train_key].mean(), cv_results[train_key].std()
+#     test_mean,  test_std  = cv_results[test_key].mean(),  cv_results[test_key].std()
+#     sign = '+' if metric in ['mae', 'mape'] else ''  # neg metrics are negative
+#     print(f"{metric.upper():<6} - Train: {train_mean:.4f} ± {train_std:.4f} | Test: {test_mean:.4f} ± {test_std:.4f}")
 
 # Train final model on full dev set and evaluate on test set
 print("\nTraining final model on full dev set...")
-xgb_model.fit(X_dev_scaled, y_dev)
+rf_model.fit(X_dev_scaled, y_dev)
 
-y_pred_test = xgb_model.predict(X_test_scaled)
+y_pred_test = rf_model.predict(X_test_scaled)
 
 r2_test   = r2_score(y_test, y_pred_test)
 mae_test  = mean_absolute_error(y_test, y_pred_test)
