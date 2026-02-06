@@ -236,6 +236,7 @@ with open(OUTFILE, "wb") as f:
 end_quantization = time.time()
 print(f"Saved model as {OUTFILE}")
 print(f"Model quantization took {end_quantization - start_quantization:.1f} seconds")
+print(f"To convert .tflite to C, use the command 'xxd -i {OUTFILE} > mlp.h'")
 
 # Check model size
 import os
