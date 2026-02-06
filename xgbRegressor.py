@@ -61,9 +61,9 @@ X_test_scaled = scaler.transform(X_test)
 
 # Model
 xgb_model = XGBRegressor(
-    n_estimators=300,
+    n_estimators=20,
     learning_rate=0.1,
-    max_depth=10,
+    max_depth=5,
     subsample=0.8,
     colsample_bytree=0.8,
     random_state=42,
