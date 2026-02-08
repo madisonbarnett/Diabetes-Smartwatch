@@ -3,6 +3,8 @@
 #include "Arduino.h"
 #include "heartRate.h"
 #include "arduinoFFT.h"
+#include "math.h"
+
 unsigned long lastSampletime = 0;
 MAX30105 particleSensor;
 // Defines the arrays for later calculations, can be changed, however these have to be very large to be able to hold samples, will affect storage.
@@ -27,7 +29,13 @@ float meanP2Pinterval=0;   // Finds the mean P2P interval
 float stddevTime=0; // Standard deviation for P2P interval
 // ------------- All I know is pain and suffering globals for stupid FFT
 //still need to setup
-
+int h=0;
+int SAMPLES;
+#define SAMPLING_FREQUENCY 100 // this will need to change depending on the setup
+float entropy; 
+double *vReal = NULL;
+double *vImag = NULL;
+ArduinoFFT<double> *FFT = NULL;
 //----------------------This will be for heartrate globals im sure this can be all done better but this is how I know how to do it
 int p=0;; // this is anouther counter
 const byte RATE_SIZE = 4; //Increase this for more averaging. 4 is good.
@@ -76,6 +84,8 @@ void loop() {
       p=0;
        lastBeat = 0; //Time at which the last beat occurred
       beatAvg=0;
+       h=0;
+
     }
     if (c == 'f' || c == 'F') {
       startRequested = false;
@@ -90,6 +100,7 @@ void loop() {
       POWEROF2();
       FIRST_DERIV_MAX();
       SKEWNESS_CALC();
+      FFT_SPECTRAL();
       IQR_CALC();
       TEAGER_ENERGY();
       TIME_STD_DEV();
@@ -104,7 +115,10 @@ void loop() {
       Serial.print(beatAvg);
       Serial.print(" ");
       Serial.print(stddevTime);
-
+      Serial.print(" ");
+      Serial.print(entropy);
+      Serial.print(" ");
+      Serial.print(h);
     }
   }
   // This can be its own seperate function idk how that affects the timing tho
@@ -139,7 +153,7 @@ void loop() {
           beatAvg += rates[x];
           beatAvg /= RATE_SIZE;
       }
-      Serial.print(beatAvg); 
+     
     }
     arraysize[i] = i;
     i++;
@@ -225,9 +239,9 @@ void TEAGER_ENERGY() {
 }
 
 void POWEROF2() {
-  p = 1;
-  while ((p << 1) <= i) {
-    p <<= 1;
+  h = 1;
+  while ((h << 1) <= i) {
+    h<<= 1;
   }
 }
 void TIME_STD_DEV() {
@@ -241,12 +255,43 @@ void TIME_STD_DEV() {
   // Calculate STD Deviation
   stddevTime = 0;
   for (int j = 0; j < p; j++) {
-    stddevTime += sq((P2PTime_Array[j] - mean));
+    stddevTime += sq((P2PTime_Array[j] -  meanP2Pinterval));
   }
   stddevTime = sqrt(stddev / (p + 0.0));
 }
+void FFT_SPECTRAL(){
+SAMPLES=h;          // Must be a power of 2
+  vReal = new double[SAMPLES];  // dynamically allocate
+  vImag = new double[SAMPLES];
+  if(FFT != NULL) delete FFT;  // clean up old one
+  FFT = new ArduinoFFT<double>(vReal, vImag, SAMPLES, SAMPLING_FREQUENCY);
+for(int j=0; j<SAMPLES; j++){
+  vReal[j]=irarray[j];
+  vImag[j]=0;
+}
+  FFT->windowing(FFTWindow::Hamming, FFTDirection::Forward);
+  FFT->compute(FFTDirection::Forward);
+  FFT->complexToMagnitude();
+   entropy = calculateSpectralEntropy();
 
+   delete FFT;
+  FFT = NULL;
+}
+float calculateSpectralEntropy() {
+  float sum = 0;
+  for(int i=1; i<SAMPLES/2; i++) {
+    sum += vReal[i];
+  }
 
-
+   entropy = 0;
+  for(int l=1; l<SAMPLES/2; l++) {
+    float k = vReal[l] / sum;  // Normalize to probability
+    if(k > 0) {
+      entropy -= k * log(k);
+    }
+  }
+    
+  return entropy;
+}
 
 
