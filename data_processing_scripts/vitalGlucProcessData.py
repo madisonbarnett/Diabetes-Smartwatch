@@ -16,12 +16,12 @@ df_cases = pd.read_csv(VITALDB_DATA_URL)
 # Output files
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-OUTPUT_FILE = os.path.join(PROJECT_ROOT, "new_vitaldb_ppg_extracted_features_30s_5minwin.csv")
+OUTPUT_FILE = os.path.join(PROJECT_ROOT, "new_vitaldb_ppg_extracted_features_5s_5minwin.csv")
 
 # Processing parameters
 PPG_SIGNAL_NAME = 'SNUADC/PLETH'
 SAMPLE_RATE_HZ = 500
-WINDOW_DURATION_SECONDS = 30
+WINDOW_DURATION_SECONDS = 5
 SAMPLES_PER_WINDOW = SAMPLE_RATE_HZ * WINDOW_DURATION_SECONDS
 VALID_WINDOW_MINUTES = 2.5  # +/- window around each BG value for stability & matching to physioNet structure
 BATCH_SIZE = 50 # Number of cases to write to csv at a time (improves speed by reducing file I/O)
