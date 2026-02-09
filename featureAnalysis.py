@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Load data into dataframe
-bg_df = pd.read_csv('processed_data/vitaldb_ppg_ecg_extracted_features_15s.csv')
+bg_df = pd.read_csv('processed_data/new_vitaldb_ppg_extracted_features_30s_5minwin.csv')
 
 # Drop ECG related columns
 bg_df = bg_df.drop(columns=[col for col in bg_df.columns if 'ecg' in col.lower()])
@@ -42,11 +42,11 @@ bg_df = bg_df.drop(columns=[col for col in bg_df.columns if 'ecg' in col.lower()
 # plt.show()
 
 # Drop redundant features based on correlation analysis
-bg_df = bg_df.drop('mean_bp', axis=1)   # Drop BP due to hardware limits
-bg_df = bg_df.drop('sys_bp', axis=1)
-bg_df = bg_df.drop('dys_bp', axis=1)
+# bg_df = bg_df.drop('mean_bp', axis=1)   # Drop BP due to hardware limits
+# bg_df = bg_df.drop('sys_bp', axis=1)
+# bg_df = bg_df.drop('dys_bp', axis=1)
 bg_df = bg_df.drop('ppg_freq', axis=1)
-bg_df = bg_df.drop('first_deriv_min', axis=1)
+bg_df = bg_df.drop('ppg_first_deriv_min', axis=1)
 bg_df = bg_df.drop('caseid', axis=1)    # Drop ID column (not a feature)
 
 # Update correlation matrix after dropping features

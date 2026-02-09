@@ -10,14 +10,14 @@ from cega import cega
 import time 
 
 # Define parameters for easy reuse or substitution
-DATASET = 'physionet' # 'vitaldb' or 'physionet'
+DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
 DATAFILE = 'processed_data/physioNet_ppg_extracted_features_30s.csv'
 GLUC = 'glucose_mg_dl'  # Target variable
 ID = 'patient_id'      # Grouping variable to prevent data leakage
 
 if DATASET == 'vitaldb':
-    DATAFILE = 'processed_data/vitaldb_ppg_ecg_extracted_features_30s.csv'
-    GLUC = 'preop_gluc'  # Target variable
+    DATAFILE = 'processed_data/new_vitaldb_ppg_extracted_features_30s_5minwin.csv'
+    GLUC = 'gluc'  # Target variable
     ID = 'caseid'      # Grouping variable to prevent data leakage
 
 # Load data into dataframe
@@ -38,9 +38,9 @@ print(f"Dev rows:       {len(df_dev):,}")
 print(f"Test rows:      {len(df_test):,}")
 
 # Split feature variables and target variable
-feat_vdb = ['age', 'sex', 'preop_dm', 'weight', 'height', 
-            'ppg_mean', 'ppg_std', 'mean_pp_interval_s', 
-            'std_pp_interval_s', 'auc', 'first_deriv_max', 'entropy'] 
+feat_vdb = ['sex', 'age', 'height', 'weight', 'bmi', 'preop_dm', 
+            'ppg_iqr', 'ppg_skew', 'ppg_teager_energy', 'ppg_mean_pp_interval_s', 
+            'ppg_std', 'ppg_entropy', 'ppg_first_deriv_max'] 
 feat_pn = ['sex', 'ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s', 'ppg_std_pp_interval_s', 
             'ppg_auc', 'ppg_first_deriv_max', 'ppg_first_deriv_min', 'ppg_entropy', 'ppg_teager_energy', 
             'ppg_log_energy', 'ppg_skew', 'ppg_iqr', 'ppg_spectral_entropy'] 
