@@ -135,13 +135,13 @@ bg_data_cases = df_cases[df_cases['age'].notna()].copy()
 valid_caseids = set(bg_data_cases['caseid'])
 
 # Save all raw glucose labs before filtering
-raw_gluc_samples = df_labs[df_labs['name'] == 'gluc'].copy()
-raw_gluc_samples.to_csv(os.path.join(PROJECT_ROOT,"0_all_labs_glucose.csv"), index=False)
-print(f"Saved all raw glucose lab samples to 0_all_labs_glucose.csv (total {len(raw_gluc_samples)} rows)")
+# raw_gluc_samples = df_labs[df_labs['name'] == 'gluc'].copy()
+# raw_gluc_samples.to_csv(os.path.join(PROJECT_ROOT,"0_all_labs_glucose.csv"), index=False)
+# print(f"Saved all raw glucose lab samples to 0_all_labs_glucose.csv (total {len(raw_gluc_samples)} rows)")
 
-# Save all tracks data
-df_cases.to_csv(os.path.join(PROJECT_ROOT,"0_all_case_data.csv"), index=False)
-print(f"Saved all case data to 0_all_case_data.csv (total {len(df_cases)} rows)")
+# # Save all tracks data
+# df_cases.to_csv(os.path.join(PROJECT_ROOT,"0_all_case_data.csv"), index=False)
+# print(f"Saved all case data to 0_all_case_data.csv (total {len(df_cases)} rows)")
 
 print("Starting data processing...")
 
