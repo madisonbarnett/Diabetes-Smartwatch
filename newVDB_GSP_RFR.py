@@ -107,17 +107,12 @@ plt.show()
 # ----------------------------------------------------
 # Retrain with important features
 # ----------------------------------------------------
-train_x_if = X_train[['sex', 'age', 'height', 'weight', 'bmi',
-                      'preop_dm', 'ppg_iqr', 'ppg_skew',
-                      'ppg_teager_energy', 'ppg_mean_pp_interval_s',
-                      'ppg_std', 'ppg_entropy',
-                      'ppg_first_deriv_max']]
+most_important_features = feat_importances.nlargest(12).index.tolist()
+print("Training again on most important features: ", most_important_features)
 
-test_x_if = X_test[['sex', 'age', 'height', 'weight', 'bmi',
-                    'preop_dm', 'ppg_iqr', 'ppg_skew',
-                    'ppg_teager_energy', 'ppg_mean_pp_interval_s',
-                    'ppg_std', 'ppg_entropy',
-                    'ppg_first_deriv_max']]
+train_x_if = X_train[most_important_features]
+
+test_x_if = X_test[most_important_features]
 
 rf_model_if = RandomForestRegressor(
     n_estimators=300,
