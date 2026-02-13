@@ -9,7 +9,7 @@ from cega import cega
 import time 
 
 # Define parameters for easy reuse or substitution
-DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
+DATASET = 'physionet' # 'vitaldb' or 'physionet'
 DATAFILE = 'processed_data/physioNet_ppg_extracted_features_30s.csv'
 GLUC = 'glucose_mg_dl'  # Target variable
 ID = 'patient_id'      # Grouping variable to prevent data leakage

@@ -31,15 +31,15 @@ bg_df = bg_df.drop(columns=[col for col in bg_df.columns if 'ecg' in col.lower()
 #     plt.show()
 
 # Find correlation between features
-# corr = bg_df.corr(numeric_only=True)
-# print(corr)
+corr = bg_df.corr(numeric_only=True)
+print(corr)
 
 # Display correlation heatmap
-# plt.figure(figsize=(14, 12))  # Bigger figure
-# sns.heatmap(corr, annot=True, fmt=".2f", linewidths=0.5, cmap="coolwarm", center=0)
-# plt.title('Feature Correlation Heatmap')
-# plt.xticks(rotation=30, ha='right')
-# plt.show()
+plt.figure(figsize=(14, 12))  # Bigger figure
+sns.heatmap(corr, annot=True, fmt=".2f", linewidths=0.5, cmap="coolwarm", center=0)
+plt.title('Feature Correlation Heatmap')
+plt.xticks(rotation=30, ha='right')
+plt.show()
 
 # Drop redundant features based on correlation analysis
 # bg_df = bg_df.drop('mean_bp', axis=1)   # Drop BP due to hardware limits
@@ -47,6 +47,8 @@ bg_df = bg_df.drop(columns=[col for col in bg_df.columns if 'ecg' in col.lower()
 # bg_df = bg_df.drop('dys_bp', axis=1)
 bg_df = bg_df.drop('ppg_freq', axis=1)
 bg_df = bg_df.drop('ppg_first_deriv_min', axis=1)
+bg_df = bg_df.drop('bmi', axis=1)
+bg_df = bg_df.drop('ppg_spectral_entropy', axis=1)
 bg_df = bg_df.drop('caseid', axis=1)    # Drop ID column (not a feature)
 
 # Update correlation matrix after dropping features
