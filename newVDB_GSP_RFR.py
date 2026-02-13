@@ -130,7 +130,7 @@ feat_importances = pd.Series(
 )
 
 feat_importances.nlargest(12).plot(kind='barh')
-plt.title('Random Forest Regressor Feature Importances')
+plt.title('Feature Importances')
 plt.xlabel('Importance Score')
 plt.ylabel('Features')
 plt.show()

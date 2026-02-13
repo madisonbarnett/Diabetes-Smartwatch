@@ -12,11 +12,12 @@ from tensorflow.keras import layers, models, callbacks
 from tensorflow.keras.optimizers import Adam
 
 # Define parameters for easy reuse or substitution
-DATASET = 'physionet' # 'vitaldb' or 'physionet'
-DATAFILE = 'processed_data/vitaldb_ppg_ecg_extracted_features_30s.csv' if DATASET == 'vitaldb' else 'processed_data/physioNet_ppg_extracted_features_30s.csv'
-GLUC = 'preop_gluc' if DATASET == 'vitaldb' else 'glucose_mg_dl'  # Target variable
+DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
+DATAFILE = 'processed_data/new_vitaldb_ppg_extracted_features_15s_5minwin.csv' if DATASET == 'vitaldb' else 'processed_data/physioNet_ppg_extracted_features_30s.csv'
+GLUC = 'gluc' if DATASET == 'vitaldb' else 'glucose_mg_dl'  # Target variable
 ID = 'caseid' if DATASET == 'vitaldb' else 'patient_id'      # Grouping variable to prevent data leakage
-SUFFIX        = '30s'
+SUFFIX        = '15s'
+FEATURES = 'important' # 'all' or 'important'
 
 # Load dataset into dataframe
 bg_df = pd.read_csv(DATAFILE)
@@ -24,7 +25,7 @@ print(f"Successfully loaded data from {DATASET} (shape: {bg_df.shape})")
 groups = bg_df[ID].values
 
 # Split into train+val and test  
-gss = GroupShuffleSplit(n_splits=1, test_size=3/16, random_state=42)
+gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
 train_idx, test_idx = next(gss.split(bg_df, groups=groups))
 
 df_train  = bg_df.iloc[train_idx].copy()
@@ -37,8 +38,7 @@ print(f"Test rows:      {len(df_test):,}")
 
 # Drop unwanted columns
 drop_cols_vdb = [col for col in bg_df.columns if 'ecg' in col.lower()]
-drop_cols_vdb.extend(['mean_bp', 'sys_bp', 'dys_bp', 'ppg_freq', 
-                  'first_deriv_min', 'caseid'])
+drop_cols_vdb.extend(['ppg_freq', 'ppg_first_deriv_min', 'caseid', 'bmi'])
 
 drop_cols_physio = ['ppg_freq', 'patient_id'] # ppg_freq redundant, patient_id not a feature
 
@@ -46,18 +46,28 @@ drop_cols = drop_cols_vdb if DATASET == 'vitaldb' else drop_cols_physio
 bg_df = bg_df.drop(columns=drop_cols)
 
 # # Features & target
-features_vdb = [
-    'age', 'sex', 'preop_dm', 'weight', 'height',
-    'ppg_mean', 'ppg_std', 'mean_pp_interval_s', 'std_pp_interval_s',
-    'auc', 'first_deriv_max', 'entropy'
-]
+# All VDB Features
+all_features_vdb = ['age', 'sex', 'preop_dm', 'weight', 'height',
+            'ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s',
+            'ppg_std_pp_interval_s', 'ppg_auc',
+            'ppg_first_deriv_max', 'ppg_entropy',
+            'ppg_teager_energy', 'ppg_log_energy',
+            'ppg_skew', 'ppg_iqr', 'ppg_spectral_entropy']
+
+# Only top 12 VDB Features + sex
+important_features_vdb = ['age', 'weight', 'height', 'preop_dm', 'ppg_mean_pp_interval_s',
+                'ppg_std', 'ppg_teager_energy', 'ppg_skew',
+                'ppg_iqr', 'ppg_entropy', 'ppg_first_deriv_max', 'ppg_std_pp_interval_s']
 
 features_physio = ['sex', 'ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s', 'ppg_std_pp_interval_s', 
                 'ppg_auc', 'ppg_first_deriv_max', 'ppg_first_deriv_min', 'ppg_entropy', 
                 'ppg_teager_energy', 'ppg_log_energy', 'ppg_skew', 'ppg_iqr', 'ppg_spectral_entropy']
 
 if DATASET == 'vitaldb':
-    features = features_vdb
+    if FEATURES == 'all':
+        features = all_features_vdb
+    else:
+        features = important_features_vdb
 elif DATASET == 'physionet':
     features = features_physio
 
@@ -78,7 +88,7 @@ print(f"Testing samples:  {X_test_scaled.shape[0]}")
 print("Splitting training data into actual train + validation sets...")
 
 # Split training into actual train + validation (val used for representative data set during quantization)
-gss_val = GroupShuffleSplit(n_splits=1, test_size=3/13, random_state=42)
+gss_val = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
 train_actual_idx, val_idx = next(gss_val.split(
     X_train_scaled, 
     groups=df_train[ID].values
