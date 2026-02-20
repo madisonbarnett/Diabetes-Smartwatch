@@ -9,7 +9,7 @@ import time
 
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks
-from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam, RMSprop
 
 # Define parameters for easy reuse or substitution
 DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
@@ -101,13 +101,34 @@ X_val = X_train_scaled[val_idx]
 y_val = y_train[val_idx]
 
 # Log transform target variable
-y_train_actual_log = np.log1p(y_train_actual)
-y_val_log = np.log1p(y_val)
-y_test_log = np.log1p(y_test)
+# y_train_actual_log = np.log1p(y_train_actual)
+# y_val_log = np.log1p(y_val)
+# y_test_log = np.log1p(y_test)
 
 print(f"Actual training samples: {X_train_actual.shape[0]}")
 print(f"Validation   samples:    {X_val.shape[0]}")
 print(f"Test         samples:    {X_test_scaled.shape[0]}")
+
+# Custom weighted MAE loss function
+def weighted_mae(y_true, y_pred):
+    error = tf.abs(y_true - y_pred)
+    
+    # Base weight = 1
+    weights = tf.ones_like(y_true)
+    
+    # Increase penalty in hypo/hyper ranges
+    weights = tf.where(y_true < 70,  weights * 8.0, weights)
+    weights = tf.where(y_true < 80,  weights * 5.0, weights)   # can overlap/add
+    weights = tf.where(y_true > 180, weights * 6.0, weights)
+    weights = tf.where(y_true > 250, weights * 8.0, weights)
+    
+    # Optional: make continuous/smooth transition
+    hypo_weight = 1 + 7 * tf.sigmoid((70 - y_true) / 15)
+    hyper_weight = 1 + 5 * tf.sigmoid((y_true - 180) / 30)
+    weights = hypo_weight * hyper_weight
+    
+    weighted_error = error * weights
+    return tf.reduce_mean(weighted_error)
 
 # Small MLP
 def build_small_glucose_model(input_dim):
@@ -116,28 +137,28 @@ def build_small_glucose_model(input_dim):
 
         layers.Dense(128, activation='relu'),
         layers.BatchNormalization(),
-        layers.Dropout(0.30),
+        layers.Dropout(0.35),
         
         layers.Dense(64, activation='relu'),   
         layers.BatchNormalization(),
-        layers.Dropout(0.25),
+        layers.Dropout(0.30),
         
         layers.Dense(32, activation='relu'),
         layers.BatchNormalization(),
-        layers.Dropout(0.20),
+        layers.Dropout(0.25),
         
         layers.Dense(16, activation='relu'),
         layers.Dense(1, activation='linear')
     ])
     
     model.compile(
-        optimizer=Adam(learning_rate=0.0015),
-        loss='mae',
+        # optimizer=Adam(learning_rate=0.0015),
+        optimizer=Adam(learning_rate=0.0001),
+        loss=weighted_mae,
         metrics=['mae', 'mape']
     )
     
     return model
-
 
 # Create model
 input_dim = X_train_actual.shape[1]
@@ -166,17 +187,17 @@ callbacks_list = [
 # Train model
 print("Starting model training!")
 history = model.fit(
-    X_train_actual, y_train_actual_log,
-    validation_data=(X_val, y_val_log),           
-    epochs=100,
-    batch_size=64,
+    X_train_actual, y_train_actual,
+    validation_data=(X_val, y_val),           
+    epochs=60,
+    batch_size=32,
     verbose=1,
     callbacks=callbacks_list
 )
 
 # Evaluate model on test set
-y_pred_log = model.predict(X_test_scaled, verbose=0).flatten()
-y_pred = np.expm1(y_pred_log)  # Inverse of log1p to get back to original scale
+y_pred = model.predict(X_test_scaled, verbose=0).flatten()
+# y_pred = np.expm1(y_pred_log)  # Inverse of log1p to get back to original scale
 
 r2_test = r2_score(y_test, y_pred)
 mae_test = np.mean(np.abs(y_test - y_pred))
