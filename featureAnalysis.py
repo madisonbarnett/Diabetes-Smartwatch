@@ -6,6 +6,20 @@ import numpy as np
 # Load data into dataframe
 bg_df = pd.read_csv('processed_data/new_vitaldb_ppg_extracted_features_30s_5minwin.csv')
 
+glucose_skew = bg_df['gluc'].skew()
+log_glucose_skew = np.log1p(bg_df['gluc']).skew()
+print(f"Skewness of original glucose: {glucose_skew:.2f}")
+print(f"Skewness of log-transformed glucose: {log_glucose_skew:.2f}")
+
+# Plot histogram of glucose
+plt.figure(figsize=(10,6))
+sns.histplot(bg_df['gluc'], bins=80, kde=True)
+plt.title('Histogram of Glucose')
+plt.xlabel('Glucose')
+plt.ylabel('Frequency')
+plt.show()
+exit()
+
 # Plot histogram of log-transformed glucose
 plt.figure(figsize=(10,6))
 sns.histplot(np.log1p(bg_df['gluc']), bins=80, kde=True)

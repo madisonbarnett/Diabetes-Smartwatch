@@ -75,6 +75,9 @@ X_test  = X.iloc[test_idx]
 y_train = y.iloc[train_idx]
 y_test  = y.iloc[test_idx]
 
+y_train_log = np.log1p(y_train)
+y_test_log = np.log1p(y_test)
+
 print("Training shape:", X_train.shape)
 print("Testing shape:", X_test.shape)
 print("Unique train patients:", len(groups.iloc[train_idx].unique()))
@@ -97,17 +100,18 @@ rf_model = RandomForestRegressor(
 
 # Sample Weights
 sample_weights = np.ones_like(y_train, dtype=np.float32)
-sample_weights[y_train < 70]  = 10.0  
+sample_weights[y_train < 70]  = 8.0  
 sample_weights[(y_train >= 70) & (y_train < 100)] = 5.0
-sample_weights[y_train > 180] = 12.0
-sample_weights[y_train > 250] = 15.0   
+sample_weights[y_train > 180] = 6.0
+sample_weights[y_train > 250] = 10.0   
 sample_weights[(y_train >= 100) & (y_train <= 180)] = 1.0
 
 # Train model
-rf_model.fit(X_train, y_train, sample_weight=sample_weights)
+rf_model.fit(X_train, y_train_log, sample_weight=sample_weights)
 
 # Predictions
-y_pred_test = rf_model.predict(X_test)
+y_pred_test_log = rf_model.predict(X_test)
+y_pred_test = np.expm1(y_pred_test_log)  # Inverse of log1p to get back to original scale
 
 # Evaluation
 pred_df = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred_test})
@@ -115,7 +119,7 @@ print(pred_df)
 
 print("Oob Score:", round(rf_model.oob_score_, 3))
 
-r2_score = round(rf_model.score(X_test, y_test), 3)
+r2_score = round(rf_model.score(X_test, y_test_log), 3)
 print("R^2 Test:", r2_score)
 
 mae = round(mean_absolute_error(y_test, y_pred_test), 2)
