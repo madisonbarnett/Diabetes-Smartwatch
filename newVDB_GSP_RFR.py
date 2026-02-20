@@ -1,4 +1,5 @@
 # Random Forest Regressor 
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.ensemble import RandomForestRegressor
@@ -94,8 +95,16 @@ rf_model = RandomForestRegressor(
     n_jobs=N_JOB
 )
 
+# Sample Weights
+sample_weights = np.ones_like(y_train, dtype=np.float32)
+sample_weights[y_train < 70]  = 10.0  
+sample_weights[(y_train >= 70) & (y_train < 100)] = 5.0
+sample_weights[y_train > 180] = 12.0
+sample_weights[y_train > 250] = 15.0   
+sample_weights[(y_train >= 100) & (y_train <= 180)] = 1.0
+
 # Train model
-rf_model.fit(X_train, y_train)
+rf_model.fit(X_train, y_train, sample_weight=sample_weights)
 
 # Predictions
 y_pred_test = rf_model.predict(X_test)
@@ -117,6 +126,8 @@ print("MAPE Test:", mape, "%\n")
 
 # CEGA
 cega(y_test, y_pred_test)
+
+exit()
 
 # ----------------------------------------------------
 # Feature Importance Plot
@@ -157,7 +168,7 @@ rf_model_if = RandomForestRegressor(
     n_jobs=N_JOB
 )
 
-rf_model_if.fit(train_x_if, y_train)
+rf_model_if.fit(train_x_if, y_train, sample_weight=sample_weights)
 
 y_pred_test_if = rf_model_if.predict(test_x_if)
 
