@@ -100,6 +100,11 @@ y_train_actual = y_train[train_actual_idx]
 X_val = X_train_scaled[val_idx]
 y_val = y_train[val_idx]
 
+# Log transform target variable
+y_train_actual_log = np.log1p(y_train_actual)
+y_val_log = np.log1p(y_val)
+y_test_log = np.log1p(y_test)
+
 print(f"Actual training samples: {X_train_actual.shape[0]}")
 print(f"Validation   samples:    {X_val.shape[0]}")
 print(f"Test         samples:    {X_test_scaled.shape[0]}")
@@ -161,8 +166,8 @@ callbacks_list = [
 # Train model
 print("Starting model training!")
 history = model.fit(
-    X_train_actual, y_train_actual,
-    validation_data=(X_val, y_val),           
+    X_train_actual, y_train_actual_log,
+    validation_data=(X_val, y_val_log),           
     epochs=100,
     batch_size=64,
     verbose=1,
@@ -170,11 +175,12 @@ history = model.fit(
 )
 
 # Evaluate model on test set
-y_pred_test = model.predict(X_test_scaled, verbose=0).flatten()
+y_pred_log = model.predict(X_test_scaled, verbose=0).flatten()
+y_pred = np.expm1(y_pred_log)  # Inverse of log1p to get back to original scale
 
-r2_test = r2_score(y_test, y_pred_test)
-mae_test = np.mean(np.abs(y_test - y_pred_test))
-mape_test = mean_absolute_percentage_error(y_test, y_pred_test) * 100
+r2_test = r2_score(y_test, y_pred)
+mae_test = np.mean(np.abs(y_test - y_pred))
+mape_test = mean_absolute_percentage_error(y_test, y_pred) * 100
 
 print("\n" + "="*60)
 print(f"MLP results on TEST set:")
@@ -193,7 +199,7 @@ print("="*60)
 
 # Perform CEGA analysis and plot results
 print("\nGenerating Clarke Error Grid Analysis plot...")
-cega(y_test, y_pred_test)
+cega(y_test, y_pred)
 
 # # Save trained model
 # model.save(f"model_weights/mlp_{SUFFIX}_{DATASET}.keras")

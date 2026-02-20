@@ -6,6 +6,15 @@ import numpy as np
 # Load data into dataframe
 bg_df = pd.read_csv('processed_data/new_vitaldb_ppg_extracted_features_30s_5minwin.csv')
 
+# Plot histogram of log-transformed glucose
+plt.figure(figsize=(10,6))
+sns.histplot(np.log1p(bg_df['gluc']), bins=80, kde=True)
+plt.title('Histogram of Log-Transformed Glucose')
+plt.xlabel('Log-Transformed Glucose')
+plt.ylabel('Frequency')
+plt.show()
+exit()
+
 # Drop ECG related columns
 bg_df = bg_df.drop(columns=[col for col in bg_df.columns if 'ecg' in col.lower()])
 
