@@ -8,8 +8,8 @@ from cega import cega
 import time
 
 import tensorflow as tf
-from tensorflow.keras import layers, models, callbacks
-from tensorflow.keras.optimizers import Adam, RMSprop
+from tensorflow.keras import layers, models, callbacks # type: ignore
+from tensorflow.keras.optimizers import Adam, RMSprop # type: ignore
 
 # Define parameters for easy reuse or substitution
 DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
@@ -101,9 +101,9 @@ X_val = X_train_scaled[val_idx]
 y_val = y_train[val_idx]
 
 # Log transform target variable
-# y_train_actual_log = np.log1p(y_train_actual)
-# y_val_log = np.log1p(y_val)
-# y_test_log = np.log1p(y_test)
+y_train_actual_log = np.log1p(y_train_actual)
+y_val_log = np.log1p(y_val)
+y_test_log = np.log1p(y_test)
 
 print(f"Actual training samples: {X_train_actual.shape[0]}")
 print(f"Validation   samples:    {X_val.shape[0]}")
@@ -117,10 +117,12 @@ def weighted_mae(y_true, y_pred):
     weights = tf.ones_like(y_true)
     
     # Increase penalty in hypo/hyper ranges
-    weights = tf.where(y_true < 70,  weights * 8.0, weights)
-    weights = tf.where(y_true < 80,  weights * 5.0, weights)   # can overlap/add
-    weights = tf.where(y_true > 180, weights * 6.0, weights)
-    weights = tf.where(y_true > 250, weights * 8.0, weights)
+    weights = tf.where(y_true < 80,  weights * 3.0, weights) 
+    weights = tf.where(y_true < 70,  weights * 30.0, weights)
+    weights = tf.where(y_true < 55, weights * 60.0, weights)
+    weights = tf.where(y_true > 180, weights * 5.0, weights)
+    weights = tf.where(y_true > 220, weights * 50.0, weights)
+    weights = tf.where(y_true > 300, weights * 100.0, weights)
     
     # Optional: make continuous/smooth transition
     hypo_weight = 1 + 7 * tf.sigmoid((70 - y_true) / 15)
@@ -129,6 +131,26 @@ def weighted_mae(y_true, y_pred):
     
     weighted_error = error * weights
     return tf.reduce_mean(weighted_error)
+
+# Another custom loss option aiming to reduce error in hypo/hyper ranges
+def asymmetric_weighted_mae(y_true, y_pred):
+    diff = y_pred - y_true   # positive = over-prediction
+    abs_diff = tf.abs(diff)
+
+    weights = tf.ones_like(y_true, dtype=tf.float32)
+
+    # Base clinical weighting
+    weights = tf.where(y_true < 80,  weights * 3.0, weights) 
+    weights = tf.where(y_true < 70,  weights * 30.0, weights)
+    weights = tf.where(y_true < 55, weights * 60.0, weights)
+    weights = tf.where(y_true > 180, weights * 5.0, weights)
+    weights = tf.where(y_true > 220, weights * 50.0, weights)
+    weights = tf.where(y_true > 300, weights * 100.0, weights)
+
+    # Extra penalty when under-predicting in hyper
+    under_penalty = tf.where((y_true > 180) & (diff < 0), 2.5, 1.0)  # 2.5× more cost to under-predict highs
+
+    return tf.reduce_mean(abs_diff * weights * under_penalty)
 
 # Small MLP
 def build_small_glucose_model(input_dim):
@@ -154,7 +176,7 @@ def build_small_glucose_model(input_dim):
     model.compile(
         # optimizer=Adam(learning_rate=0.0015),
         optimizer=Adam(learning_rate=0.0001),
-        loss=weighted_mae,
+        loss=asymmetric_weighted_mae,
         metrics=['mae', 'mape']
     )
     
@@ -176,7 +198,7 @@ callbacks_list = [
     callbacks.ReduceLROnPlateau(
         monitor='val_loss',
         factor=0.5,
-        patience=12,
+        patience=15,
         min_lr=1e-6,
         verbose=1
     )
@@ -187,8 +209,8 @@ callbacks_list = [
 # Train model
 print("Starting model training!")
 history = model.fit(
-    X_train_actual, y_train_actual,
-    validation_data=(X_val, y_val),           
+    X_train_actual, y_train_actual_log,
+    validation_data=(X_val, y_val_log),           
     epochs=60,
     batch_size=32,
     verbose=1,
@@ -196,8 +218,8 @@ history = model.fit(
 )
 
 # Evaluate model on test set
-y_pred = model.predict(X_test_scaled, verbose=0).flatten()
-# y_pred = np.expm1(y_pred_log)  # Inverse of log1p to get back to original scale
+y_pred_log = model.predict(X_test_scaled, verbose=0).flatten()
+y_pred = np.expm1(y_pred_log)  # Inverse of log1p to get back to original scale
 
 r2_test = r2_score(y_test, y_pred)
 mae_test = np.mean(np.abs(y_test - y_pred))
@@ -221,6 +243,9 @@ print("="*60)
 # Perform CEGA analysis and plot results
 print("\nGenerating Clarke Error Grid Analysis plot...")
 cega(y_test, y_pred)
+
+print("Exiting for now. Comment this out later to quantize and save the model!")
+exit()
 
 # # Save trained model
 # model.save(f"model_weights/mlp_{SUFFIX}_{DATASET}.keras")
