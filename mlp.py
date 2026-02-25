@@ -9,7 +9,7 @@ import time
 
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks # type: ignore
-from tensorflow.keras.optimizers import Adam, RMSprop # type: ignore
+from tensorflow.keras.optimizers import Adam # type: ignore
 
 # Define parameters for easy reuse or substitution
 DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
@@ -176,7 +176,7 @@ def build_small_glucose_model(input_dim):
     model.compile(
         # optimizer=Adam(learning_rate=0.0015),
         optimizer=Adam(learning_rate=0.0001),
-        loss=asymmetric_weighted_mae,
+        loss='mae',
         metrics=['mae', 'mape']
     )
     
@@ -206,6 +206,15 @@ callbacks_list = [
     # callbacks.ModelCheckpoint("best_model.keras", monitor='val_loss', save_best_only=True)
 ]
 
+
+
+sample_weights = np.ones_like(y_train_actual, dtype=np.float32)
+sample_weights = tf.where(y_train_actual < 55, sample_weights * 3.0, sample_weights)
+sample_weights = tf.where(y_train_actual > 180, sample_weights * 3.0, sample_weights)
+sample_weights = tf.where(y_train_actual > 240, sample_weights * 2.0, sample_weights)
+sample_weights = tf.where(y_train_actual > 300, sample_weights * 2.0, sample_weights)
+
+
 # Train model
 print("Starting model training!")
 history = model.fit(
@@ -214,7 +223,8 @@ history = model.fit(
     epochs=60,
     batch_size=32,
     verbose=1,
-    callbacks=callbacks_list
+    callbacks=callbacks_list,
+    sample_weight=sample_weights
 )
 
 # Evaluate model on test set
