@@ -9,7 +9,7 @@ from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
 
-from cega import cega
+from helper_scripts.cega import cega
 
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks
