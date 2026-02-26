@@ -1,0 +1,23 @@
+# Core scientific stack
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+seaborn
+
+# Deep learning
+tensorflow
+
+# Data access / processing
+vitaldb
+tqdm
+
+# Model serialization / embedded export
+joblib
+emlearn
+
+# Legacy/experimental models in old_models/
+xgboost
+m2cgen
+shap

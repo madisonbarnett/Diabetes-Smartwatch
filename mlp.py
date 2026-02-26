@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split, GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
-from cega import cega
+from helper_scripts.cega import cega
 import time
 
 import tensorflow as tf
