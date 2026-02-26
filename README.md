@@ -102,6 +102,16 @@ pip install -r requirements.txt
 
 The `requirements.txt` file includes core dependencies for the main pipeline (`mlp.py`) plus legacy/experimental dependencies used in `old_models/`.
 
+## Git LFS
+
+This repository uses Git Large File Storage (Git LFS) for large artifacts, including processed datasets and model files that are too large for normal Git tracking.
+
+After cloning, make sure Git LFS is installed and pull LFS-managed files:
+
+```bash
+git lfs install
+git lfs pull
+```
 ## Notes and caveats
 
 - Several scripts are research-stage and may require path/column updates before running on a fresh machine.
@@ -115,3 +125,4 @@ The `requirements.txt` file includes core dependencies for the main pipeline (`m
 2. Train/evaluate with `mlp.py`.
 3. Inspect CEGA and standard regression metrics.
 4. If deployment is needed, remove `exit()` in `mlp.py` and run quantization/export.
+
