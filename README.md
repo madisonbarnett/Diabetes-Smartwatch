@@ -29,6 +29,8 @@ In `mlp.py`, this is configured by default:
 - `results/`: Stored evaluation outputs (including LOPO and CEGA plots from RFR baselines).
 - `old_models/`: Archived model experiments (RF, XGBoost, DNN/LSTM variants, validation scripts, notebooks).
 
+Important note: When attempting to run some old models import directories may need to be updated to correctly access datasets and custom helper scripts.
+
 ## End-to-end data pipeline (high level)
 
 1. Pull or parse raw physiological data (`raw_data/` or VitalDB API).
