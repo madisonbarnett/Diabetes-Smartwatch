@@ -101,15 +101,15 @@ X_val = X_train_scaled[val_idx]
 y_val = y_train[val_idx]
 
 # Log transform target variable
-y_train_actual_log = np.log1p(y_train_actual)
-y_val_log = np.log1p(y_val)
-y_test_log = np.log1p(y_test)
+# y_train_actual_log = np.log1p(y_train_actual)
+# y_val_log = np.log1p(y_val)
+# y_test_log = np.log1p(y_test)
 
 print(f"Actual training samples: {X_train_actual.shape[0]}")
 print(f"Validation   samples:    {X_val.shape[0]}")
 print(f"Test         samples:    {X_test_scaled.shape[0]}")
 
-# Custom weighted MAE loss function
+# Custom weighted MAE loss function (can be used for raw or log glucose)
 def weighted_mae(y_true, y_pred):
     error = tf.abs(y_true - y_pred)
     
@@ -132,7 +132,7 @@ def weighted_mae(y_true, y_pred):
     weighted_error = error * weights
     return tf.reduce_mean(weighted_error)
 
-# Another custom loss option aiming to reduce error in hypo/hyper ranges
+# Another custom loss option (use with log-transformed glucose!)
 def asymmetric_weighted_mae(y_true, y_pred):
     diff = y_pred - y_true   # positive = over-prediction
     abs_diff = tf.abs(diff)
@@ -206,30 +206,27 @@ callbacks_list = [
     # callbacks.ModelCheckpoint("best_model.keras", monitor='val_loss', save_best_only=True)
 ]
 
-
-
-sample_weights = np.ones_like(y_train_actual, dtype=np.float32)
-sample_weights = tf.where(y_train_actual < 55, sample_weights * 3.0, sample_weights)
-sample_weights = tf.where(y_train_actual > 180, sample_weights * 3.0, sample_weights)
-sample_weights = tf.where(y_train_actual > 240, sample_weights * 2.0, sample_weights)
-sample_weights = tf.where(y_train_actual > 300, sample_weights * 2.0, sample_weights)
-
+# sample_weights = np.ones_like(y_train_actual, dtype=np.float32)
+# sample_weights = tf.where(y_train_actual < 55, sample_weights * 3.0, sample_weights)
+# sample_weights = tf.where(y_train_actual > 180, sample_weights * 3.0, sample_weights)
+# sample_weights = tf.where(y_train_actual > 240, sample_weights * 2.0, sample_weights)
+# sample_weights = tf.where(y_train_actual > 300, sample_weights * 2.0, sample_weights)
 
 # Train model
 print("Starting model training!")
 history = model.fit(
-    X_train_actual, y_train_actual_log,
-    validation_data=(X_val, y_val_log),           
+    X_train_actual, y_train_actual,
+    validation_data=(X_val, y_val),           
     epochs=60,
     batch_size=32,
     verbose=1,
-    callbacks=callbacks_list,
-    sample_weight=sample_weights
+    callbacks=callbacks_list
+    # sample_weight=sample_weights
 )
 
 # Evaluate model on test set
-y_pred_log = model.predict(X_test_scaled, verbose=0).flatten()
-y_pred = np.expm1(y_pred_log)  # Inverse of log1p to get back to original scale
+y_pred = model.predict(X_test_scaled, verbose=0).flatten()
+# y_pred = np.expm1(y_pred_log)  # Inverse of log1p to get back to original scale
 
 r2_test = r2_score(y_test, y_pred)
 mae_test = np.mean(np.abs(y_test - y_pred))
