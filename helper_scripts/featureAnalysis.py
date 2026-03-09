@@ -4,7 +4,48 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Load data into dataframe
-bg_df = pd.read_csv('processed_data/new_vitaldb_ppg_extracted_features_30s_5minwin.csv')
+bg_df = pd.read_csv('processed_data/new_vitaldb_ppg_extracted_features_15s_5minwin.csv')
+
+# Choose number of bins
+num_bins = 100
+
+# Compute original histogram manually using numpy
+counts, bin_edges = np.histogram(bg_df['gluc'], bins=num_bins)
+
+total = len(bg_df['gluc'])
+
+print("\nTotal count:", total)
+
+print("\nBin Statistics (Original):")
+print("-" * 60)
+
+for i in range(len(counts)):
+    bin_start = bin_edges[i]
+    bin_end = bin_edges[i+1]
+    count = counts[i]
+    percent = (count / total) * 100
+
+    print(f"Bin {i+1:2d}: [{bin_start:8.2f}, {bin_end:8.2f}) "
+          f"Count = {count:6d} "
+          f"({percent:6.2f}%)")
+    
+# Compute log-transformed histogram manually using numpy
+counts, bin_edges = np.histogram(np.log1p(bg_df['gluc']), bins=num_bins)
+
+total = len(np.log1p(bg_df['gluc']))
+
+print("\nBin Statistics (Log-Transformed):")
+print("-" * 60)
+
+for i in range(len(counts)):
+    bin_start = bin_edges[i]
+    bin_end = bin_edges[i+1]
+    count = counts[i]
+    percent = (count / total) * 100
+
+    print(f"Bin {i+1:2d}: [{bin_start:8.2f}, {bin_end:8.2f}) "
+          f"Count = {count:6d} "
+          f"({percent:6.2f}%)")
 
 glucose_skew = bg_df['gluc'].skew()
 log_glucose_skew = np.log1p(bg_df['gluc']).skew()
@@ -13,20 +54,21 @@ print(f"Skewness of log-transformed glucose: {log_glucose_skew:.2f}")
 
 # Plot histogram of glucose
 plt.figure(figsize=(10,6))
-sns.histplot(bg_df['gluc'], bins=80, kde=True)
+sns.histplot(bg_df['gluc'], bins=num_bins, kde=True)
 plt.title('Histogram of Glucose')
 plt.xlabel('Glucose')
 plt.ylabel('Frequency')
 plt.show()
-exit()
 
 # Plot histogram of log-transformed glucose
 plt.figure(figsize=(10,6))
-sns.histplot(np.log1p(bg_df['gluc']), bins=80, kde=True)
+sns.histplot(np.log1p(bg_df['gluc']), bins=num_bins, kde=True)
 plt.title('Histogram of Log-Transformed Glucose')
 plt.xlabel('Log-Transformed Glucose')
 plt.ylabel('Frequency')
 plt.show()
+
+# Early exit to only plot skewness histogram, remove to continue plotting feature analysis heatmap
 exit()
 
 # Drop ECG related columns
