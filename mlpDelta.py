@@ -10,18 +10,32 @@ import time
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks # type: ignore
 from tensorflow.keras.optimizers import Adam # type: ignore
+from sklearn.ensemble import RandomForestRegressor
+import matplotlib.pyplot as plt
 
 # Define parameters for easy reuse or substitution
-DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
-DATAFILE = 'processed_data/new_vitaldb_ppg_extracted_features_15s_5minwin.csv' if DATASET == 'vitaldb' else 'processed_data/physioNet_ppg_extracted_features_30s.csv'
-GLUC = 'gluc' if DATASET == 'vitaldb' else 'glucose_mg_dl'  # Target variable
-ID = 'caseid' if DATASET == 'vitaldb' else 'patient_id'      # Grouping variable to prevent data leakage
+DATAFILE = 'processed_data/delta_vitaldb_ppg_extracted_features_15s_5minwin.csv'
+GLUC = 'gluc'      # Target variable
+ID = 'caseid'      # Grouping variable to prevent data leakage
 SUFFIX        = '15s'
 FEATURES = 'important' # 'all' or 'important'
+SCALE = 'log' # 'standard' or 'log'
+
+# Feature isolation parameters
+NUM_FEATS = 15
+DERIVE_FEATS = False
+
+# Histogram-derived sample-weights parameters
+NUM_BINS = 80
+ALPHA = 0.25   # smoothing exponent
+
+# Model hyperparameters
+NUM_EPOCHS = 50
+BATCH_SIZE = 32
 
 # Load dataset into dataframe
 bg_df = pd.read_csv(DATAFILE)
-print(f"Successfully loaded data from {DATASET} (shape: {bg_df.shape})")
+print(f"Successfully loaded data from {DATAFILE} (shape: {bg_df.shape})")
 groups = bg_df[ID].values
 
 # Split into train+val and test  
@@ -37,39 +51,72 @@ print(f"Dev rows:       {len(df_train):,}")
 print(f"Test rows:      {len(df_test):,}")
 
 # Drop unwanted columns
-drop_cols_vdb = [col for col in bg_df.columns if 'ecg' in col.lower()]
-drop_cols_vdb.extend(['ppg_freq', 'ppg_first_deriv_min', 'caseid', 'bmi'])
+drop_cols = [GLUC, ID, 'ppg_freq', 'ppg_std',
+    'ppg_mean', 'ppg_first_deriv_min', 'bmi',
+    'ppg_spectral_entropy', 'pwm_rise_time',
+    'pwm_decay_time', 'pwm_max_slope',
+    'pwm_min_slope', 'delta_ppg_freq']
 
-drop_cols_physio = ['ppg_freq', 'patient_id'] # ppg_freq redundant, patient_id not a feature
-
-drop_cols = drop_cols_vdb if DATASET == 'vitaldb' else drop_cols_physio
-bg_df = bg_df.drop(columns=drop_cols)
+all_features = [c for c in bg_df.columns if c not in drop_cols]
 
 # # Features & target
 # All VDB Features
-all_features_vdb = ['age', 'sex', 'preop_dm', 'weight', 'height',
-            'ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s',
-            'ppg_std_pp_interval_s', 'ppg_auc',
-            'ppg_first_deriv_max', 'ppg_entropy',
-            'ppg_teager_energy', 'ppg_log_energy',
-            'ppg_skew', 'ppg_iqr', 'ppg_spectral_entropy']
+# all_features_vdb = ['age', 'sex', 'preop_dm', 'weight', 'height',
+#             'ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s',
+#             'ppg_std_pp_interval_s', 'ppg_auc',
+#             'ppg_first_deriv_max', 'ppg_entropy',
+#             'ppg_teager_energy', 'ppg_log_energy',
+#             'ppg_skew', 'ppg_iqr', 'ppg_spectral_entropy',
+#             'pwm_rise_time', 'pwm_decay_time', 'pwm_pulse_width',
+#             'pwm_pulse_amplitude', 'pwm_max_slope', 'pwm_min_slope',
+#             'delta_ppg_mean', 'delta_ppg_std', 'delta_ppg_mean_pp_interval_s',
+#             'delta_ppg_std_pp_interval_s', 'delta_ppg_freq', 'delta_ppg_auc',
+#             'delta_ppg_first_deriv_max', 'delta_ppg_first_deriv_min',
+#             'delta_ppg_entropy', 'delta_ppg_teager_energy', 'delta_ppg_log_energy',
+#             'delta_ppg_skew', 'delta_ppg_iqr', 'delta_ppg_spectral_entropy']
 
-# Only top 12 VDB Features + sex
-important_features_vdb = ['age', 'weight', 'height', 'preop_dm', 'ppg_mean_pp_interval_s',
-                'ppg_std', 'ppg_teager_energy', 'ppg_skew',
-                'ppg_iqr', 'ppg_entropy', 'ppg_first_deriv_max', 'ppg_std_pp_interval_s']
+if DERIVE_FEATS == True:
+    print("\nComputing feature importance using RandomForest...")
 
-features_physio = ['sex', 'ppg_mean', 'ppg_std', 'ppg_mean_pp_interval_s', 'ppg_std_pp_interval_s', 
-                'ppg_auc', 'ppg_first_deriv_max', 'ppg_first_deriv_min', 'ppg_entropy', 
-                'ppg_teager_energy', 'ppg_log_energy', 'ppg_skew', 'ppg_iqr', 'ppg_spectral_entropy']
+    rf = RandomForestRegressor(
+        n_estimators=200,
+        random_state=42,
+        n_jobs=-1
+    )
 
-if DATASET == 'vitaldb':
-    if FEATURES == 'all':
-        features = all_features_vdb
-    else:
-        features = important_features_vdb
-elif DATASET == 'physionet':
-    features = features_physio
+    rf.fit(df_train[all_features], df_train[GLUC])
+
+    importances = pd.Series(
+        rf.feature_importances_,
+        index=all_features
+    ).sort_values(ascending=False)
+
+    print("\nTop 25 features:")
+    print(importances.head(25))
+
+    importances.head(25).sort_values().plot(
+        kind='barh',
+        figsize=(8,10),
+        title="Top 25 Feature Importances"
+    )
+
+    plt.tight_layout()
+    plt.show()
+
+    important_features = importances.head(NUM_FEATS).index.tolist()
+
+    print(f"\nSelected {NUM_FEATS} most important features:")
+    print(important_features)
+else:
+    important_features = ['height', 'weight', 'age', 'preop_dm', 'ppg_mean_pp_interval_s', 
+                        'pwm_pulse_amplitude', 'ppg_teager_energy', 'ppg_skew', 'ppg_iqr', 
+                        'pwm_pulse_width', 'ppg_first_deriv_max', 'ppg_entropy', 
+                        'ppg_std_pp_interval_s', 'sex', 'delta_ppg_mean_pp_interval_s']
+
+if FEATURES == 'all':
+    features = all_features
+else:
+    features = important_features
 
 X_train  = df_train[features].values.astype(np.float32)
 y_train  = df_train[GLUC].values.astype(np.float32)
@@ -108,49 +155,6 @@ y_test_log = np.log1p(y_test)
 print(f"Actual training samples: {X_train_actual.shape[0]}")
 print(f"Validation   samples:    {X_val.shape[0]}")
 print(f"Test         samples:    {X_test_scaled.shape[0]}")
-
-# Custom weighted MAE loss function
-def weighted_mae(y_true, y_pred):
-    error = tf.abs(y_true - y_pred)
-    
-    # Base weight = 1
-    weights = tf.ones_like(y_true)
-    
-    # Increase penalty in hypo/hyper ranges
-    weights = tf.where(y_true < 80,  weights * 3.0, weights) 
-    weights = tf.where(y_true < 70,  weights * 30.0, weights)
-    weights = tf.where(y_true < 55, weights * 60.0, weights)
-    weights = tf.where(y_true > 180, weights * 5.0, weights)
-    weights = tf.where(y_true > 220, weights * 50.0, weights)
-    weights = tf.where(y_true > 300, weights * 100.0, weights)
-    
-    # Optional: make continuous/smooth transition
-    hypo_weight = 1 + 7 * tf.sigmoid((70 - y_true) / 15)
-    hyper_weight = 1 + 5 * tf.sigmoid((y_true - 180) / 30)
-    weights = hypo_weight * hyper_weight
-    
-    weighted_error = error * weights
-    return tf.reduce_mean(weighted_error)
-
-# Another custom loss option aiming to reduce error in hypo/hyper ranges
-def asymmetric_weighted_mae(y_true, y_pred):
-    diff = y_pred - y_true   # positive = over-prediction
-    abs_diff = tf.abs(diff)
-
-    weights = tf.ones_like(y_true, dtype=tf.float32)
-
-    # Base clinical weighting
-    weights = tf.where(y_true < 80,  weights * 3.0, weights) 
-    weights = tf.where(y_true < 70,  weights * 30.0, weights)
-    weights = tf.where(y_true < 55, weights * 60.0, weights)
-    weights = tf.where(y_true > 180, weights * 5.0, weights)
-    weights = tf.where(y_true > 220, weights * 50.0, weights)
-    weights = tf.where(y_true > 300, weights * 100.0, weights)
-
-    # Extra penalty when under-predicting in hyper
-    under_penalty = tf.where((y_true > 180) & (diff < 0), 2.5, 1.0)  # 2.5× more cost to under-predict highs
-
-    return tf.reduce_mean(abs_diff * weights * under_penalty)
 
 # Small MLP
 def build_small_glucose_model(input_dim):
@@ -206,29 +210,49 @@ callbacks_list = [
     # callbacks.ModelCheckpoint("best_model.keras", monitor='val_loss', save_best_only=True)
 ]
 
-# ============================================================
-# Histogram-Derived Sample Weights (Log-Space)
-# ============================================================
+if SCALE == 'log':
+    # ============================================================
+    # Histogram-Derived Sample Weights (Log-Space)
+    # ============================================================
 
-NUM_BINS = 80
-ALPHA = 0.25   # smoothing exponent (0.5 recommended)
+    counts, bin_edges = np.histogram(y_train_actual_log, bins=NUM_BINS)
 
-counts, bin_edges = np.histogram(y_train_actual_log, bins=NUM_BINS)
+    # Avoid division by zero
+    counts = counts + 1
 
-# Avoid division by zero
-counts = counts + 1
+    # Inverse density weighting
+    bin_weights = (1.0 / counts) ** ALPHA
 
-# Inverse density weighting
-bin_weights = (1.0 / counts) ** ALPHA
+    # Normalize so mean weight = 1
+    bin_weights = bin_weights / np.mean(bin_weights)
 
-# Normalize so mean weight = 1
-bin_weights = bin_weights / np.mean(bin_weights)
+    # Assign weight to each sample
+    bin_indices = np.digitize(y_train_actual_log, bin_edges[:-1], right=True)
+    sample_weights = bin_weights[bin_indices - 1]
 
-# Assign weight to each sample
-bin_indices = np.digitize(y_train_actual_log, bin_edges[:-1], right=True)
-sample_weights = bin_weights[bin_indices - 1]
+    print(f"Sample weight range: {sample_weights.min():.3f} - {sample_weights.max():.3f}")
 
-print(f"Sample weight range: {sample_weights.min():.3f} - {sample_weights.max():.3f}")
+elif SCALE == 'standard':
+    # ============================================================
+    # Histogram-Derived Sample Weights (Original Scale)
+    # ============================================================
+
+    counts, bin_edges = np.histogram(y_train_actual, bins=NUM_BINS)
+
+    # Avoid division by zero
+    counts = counts + 1
+
+    # Inverse density weighting
+    bin_weights = (1.0 / counts) ** ALPHA
+
+    # Normalize so mean weight = 1
+    bin_weights = bin_weights / np.mean(bin_weights)
+
+    # Assign weight to each sample
+    bin_indices = np.digitize(y_train_actual, bin_edges[:-1], right=True)
+    sample_weights = bin_weights[bin_indices - 1]
+
+    print(f"Sample weight range: {sample_weights.min():.3f} - {sample_weights.max():.3f}")
 
 # ============================================================
 # Custom Adjustable Sample Weights (Original Scale)
@@ -242,19 +266,33 @@ print(f"Sample weight range: {sample_weights.min():.3f} - {sample_weights.max():
 
 # Train model
 print("Starting model training!")
-history = model.fit(
-    X_train_actual, y_train_actual_log,
-    validation_data=(X_val, y_val_log),           
-    epochs=60,
-    batch_size=32,
-    verbose=1,
-    callbacks=callbacks_list,
-    sample_weight=sample_weights
-)
+if SCALE == 'log':
+    history = model.fit(
+        X_train_actual, y_train_actual_log,
+        validation_data=(X_val, y_val_log),           
+        epochs=NUM_EPOCHS,
+        batch_size=BATCH_SIZE,
+        verbose=1,
+        callbacks=callbacks_list,
+        sample_weight=sample_weights
+    )
 
-# Evaluate model on test set
-y_pred_log = model.predict(X_test_scaled, verbose=0).flatten()
-y_pred = np.expm1(y_pred_log)  # Inverse of log1p to get back to original scale
+    # Evaluate model on test set
+    y_pred_log = model.predict(X_test_scaled, verbose=0).flatten()
+    y_pred = np.expm1(y_pred_log)  # Inverse of log1p to get back to original scale
+elif SCALE == 'standard':
+    history = model.fit(
+        X_train_actual, y_train_actual,
+        validation_data=(X_val, y_val),           
+        epochs=NUM_EPOCHS,
+        batch_size=BATCH_SIZE,
+        verbose=1,
+        callbacks=callbacks_list,
+        sample_weight=sample_weights
+    )
+
+    # Evaluate model on test set
+    y_pred = model.predict(X_test_scaled, verbose=0).flatten()
 
 r2_test = r2_score(y_test, y_pred)
 mae_test = np.mean(np.abs(y_test - y_pred))
@@ -326,7 +364,7 @@ converter.representative_dataset = representative_dataset
 tflite_model = converter.convert()
 
 # Save quantized model
-OUTFILE = f'model_weights/mlp_{SUFFIX}_{DATASET}_int8.tflite'
+OUTFILE = f'model_weights/delta_mlp_{SUFFIX}_int8.tflite'
 with open(OUTFILE, "wb") as f:
     f.write(tflite_model)
 

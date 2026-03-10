@@ -16,7 +16,7 @@ df_cases = pd.read_csv(VITALDB_DATA_URL)
 # Output files
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-OUTPUT_FILE = os.path.join(PROJECT_ROOT, "new_vitaldb_ppg_extracted_features_15s_5minwin.csv")
+OUTPUT_FILE = os.path.join(PROJECT_ROOT, "delta_vitaldb_ppg_extracted_features_15s_5minwin.csv")
 
 # Processing parameters
 PPG_SIGNAL_NAME = 'SNUADC/PLETH'
@@ -124,6 +124,79 @@ def extract_ppg_features(ppg_series, fs):
 
     return features
 
+def extract_pwm_features(ppg_signal, fs):
+    """
+    Extract pulse wave morphology features from a PPG window.
+    """
+
+    features = {}
+
+    peaks, _ = find_peaks(ppg_signal, distance=int(fs*0.4))
+
+    if len(peaks) < 2:
+        return {
+            'pwm_rise_time':0,
+            'pwm_decay_time':0,
+            'pwm_pulse_width':0,
+            'pwm_pulse_amplitude':0,
+            'pwm_max_slope':0,
+            'pwm_min_slope':0
+        }
+
+    rise_times = []
+    decay_times = []
+    pulse_widths = []
+    amplitudes = []
+    max_slopes = []
+    min_slopes = []
+
+    for i in range(1, len(peaks)-1):
+
+        start = peaks[i-1]
+        peak = peaks[i]
+        end = peaks[i+1]
+
+        pulse = ppg_signal[start:end]
+
+        if len(pulse) < 5:
+            continue
+
+        # amplitude
+        amplitude = ppg_signal[peak] - np.min(pulse)
+
+        # timing
+        rise = (peak - start) / fs
+        decay = (end - peak) / fs
+        width = (end - start) / fs
+
+        # derivative
+        deriv = np.diff(pulse)
+
+        rise_times.append(rise)
+        decay_times.append(decay)
+        pulse_widths.append(width)
+        amplitudes.append(amplitude)
+        max_slopes.append(np.max(deriv))
+        min_slopes.append(np.min(deriv))
+
+    if len(rise_times) == 0:
+        return {
+            'pwm_rise_time':0,
+            'pwm_decay_time':0,
+            'pwm_pulse_width':0,
+            'pwm_pulse_amplitude':0,
+            'pwm_max_slope':0,
+            'pwm_min_slope':0
+        }
+
+    features['pwm_rise_time'] = np.mean(rise_times)
+    features['pwm_decay_time'] = np.mean(decay_times)
+    features['pwm_pulse_width'] = np.mean(pulse_widths)
+    features['pwm_pulse_amplitude'] = np.mean(amplitudes)
+    features['pwm_max_slope'] = np.mean(max_slopes)
+    features['pwm_min_slope'] = np.mean(min_slopes)
+
+    return features
 
 # MAIN DATA PROCESSING SECTION
 
@@ -217,6 +290,10 @@ for caseid in caseids_to_process:
             # Extract hand-engineered features
             ppg_features = extract_ppg_features(ppg_window, SAMPLE_RATE_HZ)
 
+            pwm_features = extract_pwm_features(ppg_window, SAMPLE_RATE_HZ)
+
+            ppg_features.update(pwm_features)
+
             # Skip samples where PPG is null or infinite (as returned by extract_ppg_features function)
             if all(v == 0 for v in ppg_features.values()):
                 continue
@@ -236,6 +313,33 @@ for caseid in caseids_to_process:
 
         # Convert list of dicts to a DataFrame and append to the CSV
         case_df = pd.DataFrame(case_data)
+
+        # ============================================================
+        # DELTA FEATURE ENGINEERING (WITHIN PATIENT)
+        # ============================================================
+
+        if not case_df.empty:
+
+            # List of PPG features to create delta versions for
+            delta_source_features = [
+                'ppg_mean','ppg_std','ppg_mean_pp_interval_s','ppg_std_pp_interval_s',
+                'ppg_freq','ppg_auc','ppg_first_deriv_max','ppg_first_deriv_min',
+                'ppg_entropy','ppg_teager_energy','ppg_log_energy','ppg_skew',
+                'ppg_iqr','ppg_spectral_entropy'
+            ]
+
+            # Ensure time order within case
+            case_df = case_df.reset_index(drop=True)
+
+            # Create delta features
+            for feature in delta_source_features:
+
+                delta_name = f"delta_{feature}"
+
+                case_df[delta_name] = case_df[feature].diff()
+
+            # Replace NaN in first row with 0
+            case_df.fillna(0, inplace=True)
 
         if not case_df.empty:
             all_case_dfs.append(case_df)

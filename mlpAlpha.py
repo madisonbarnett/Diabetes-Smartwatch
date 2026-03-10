@@ -40,7 +40,7 @@ IMPORTANT_FEATURES = [
 ]
 
 NUM_BINS = 50
-ALPHA_COARSE = np.linspace(0.0, 1.0, 7)
+ALPHA_COARSE = np.linspace(0.2, 1.0, 7)
 FINE_RANGE = 0.15
 FINE_POINTS = 5
 
