@@ -21,9 +21,9 @@ OUTPUT_FILE = os.path.join(PROJECT_ROOT, "delta_vitaldb_ppg_extracted_features_1
 # Processing parameters
 PPG_SIGNAL_NAME = 'SNUADC/PLETH'
 SAMPLE_RATE_HZ = 500
-WINDOW_DURATION_SECONDS = 15
+WINDOW_DURATION_SECONDS = 10
 SAMPLES_PER_WINDOW = SAMPLE_RATE_HZ * WINDOW_DURATION_SECONDS
-VALID_WINDOW_MINUTES = 2.5  # +/- window around each BG value for stability & matching to physioNet structure
+VALID_WINDOW_MINUTES = 8  # +/- window around each BG value for stability & matching to physioNet structure
 BATCH_SIZE = 50 # Number of cases to write to csv at a time (improves speed by reducing file I/O)
 
 # --- UTILITY FUNCTIONS ---

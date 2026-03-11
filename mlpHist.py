@@ -175,7 +175,7 @@ def build_small_glucose_model(input_dim):
     
     model.compile(
         # optimizer=Adam(learning_rate=0.0015),
-        optimizer=Adam(learning_rate=0.0001),
+        optimizer=Adam(learning_rate=0.0001, clipnorm=1.0),
         loss='mae',
         metrics=['mae', 'mape']
     )
@@ -224,9 +224,14 @@ bin_weights = (1.0 / counts) ** ALPHA
 # Normalize so mean weight = 1
 bin_weights = bin_weights / np.mean(bin_weights)
 
+
+
 # Assign weight to each sample
 bin_indices = np.digitize(y_train_actual_log, bin_edges[:-1], right=True)
 sample_weights = bin_weights[bin_indices - 1]
+
+# Clip extreme weights (stability fix)
+sample_weights = np.clip(sample_weights, 0.25, 4.0)
 
 print(f"Sample weight range: {sample_weights.min():.3f} - {sample_weights.max():.3f}")
 
@@ -254,6 +259,7 @@ history = model.fit(
 
 # Evaluate model on test set
 y_pred_log = model.predict(X_test_scaled, verbose=0).flatten()
+y_pred_log = np.clip(y_pred_log, 0, 5.9) # Clip predictions to prevent exploding gradients after exponentiation
 y_pred = np.expm1(y_pred_log)  # Inverse of log1p to get back to original scale
 
 r2_test = r2_score(y_test, y_pred)
@@ -279,8 +285,8 @@ print("="*60)
 print("\nGenerating Clarke Error Grid Analysis plot...")
 cega(y_test, y_pred)
 
-print("Exiting for now. Comment this out later to quantize and save the model!")
-exit()
+# print("Exiting for now. Comment this out later to quantize and save the model!")
+# exit()
 
 # # Save trained model
 # model.save(f"model_weights/mlp_{SUFFIX}_{DATASET}.keras")
@@ -326,7 +332,7 @@ converter.representative_dataset = representative_dataset
 tflite_model = converter.convert()
 
 # Save quantized model
-OUTFILE = f'model_weights/mlp_{SUFFIX}_{DATASET}_int8.tflite'
+OUTFILE = f'model_weights/mlp_hist_{SUFFIX}_{DATASET}_int8.tflite'
 with open(OUTFILE, "wb") as f:
     f.write(tflite_model)
 
@@ -341,3 +347,14 @@ if os.path.exists(OUTFILE):
     print(f"Quantized model size: {os.path.getsize(OUTFILE)/1024:.1f} KB")
 else:
     print(f"Error: Unable to determine file size (does the quantized model exist?)")
+
+print(f"StandardScalar Mean Value: {scaler.mean_}")
+print(f"StandardScalar Scale Value: {scaler.scale_}")
+print("Use mean and scalar as such\nfloat mean[12] = {...};\nfloat scale[12] = {...};\nfor(int i=0;i<12;i++)\n{\n   input[i] = (input[i] - mean[i]) / scale[i];\n}")
+
+# Confirm correct quantization (Should output dtype: int8)
+interpreter = tf.lite.Interpreter(model_path=OUTFILE)
+interpreter.allocate_tensors()
+
+print(interpreter.get_input_details())
+print(interpreter.get_output_details())
