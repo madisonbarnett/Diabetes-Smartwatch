@@ -15,7 +15,7 @@ from tensorflow.keras.optimizers import Adam # type: ignore
 # Define parameters for easy reuse or substitution
 DATASET = 'vitaldb' # 'vitaldb' or 'physionet'
 # DATAFILE = 'processed_data/new_vitaldb_ppg_extracted_features_15s_5minwin.csv' if DATASET == 'vitaldb' else 'processed_data/physioNet_ppg_extracted_features_30s.csv'
-DATAFILE = 'vitaldb_1s_ppg_segments_flattened.csv'
+DATAFILE = './processed_data/vitaldb_1s_ppg_segments_flattened_clean.csv'
 GLUC = 'gluc' if DATASET == 'vitaldb' else 'glucose_mg_dl'  # Target variable
 ID = 'caseid' if DATASET == 'vitaldb' else 'patient_id'      # Grouping variable to prevent data leakage
 SUFFIX        = '1s_segments'
@@ -294,28 +294,28 @@ callbacks_list = [
 # sample_weights = tf.where(y_train_actual > 300, sample_weights * 2.0, sample_weights)
 
 # Check for leakage or duplicates
-# 1. Overlap in caseids between train/test
-train_cases = set(df_train['caseid'].unique())
-test_cases  = set(df_test['caseid'].unique())
-overlap = train_cases.intersection(test_cases)
-print(f"Overlapping caseids (should be 0): {len(overlap)}")
-if overlap:
-    print("Leakage confirmed! Examples:", list(overlap)[:5])
+# # 1. Overlap in caseids between train/test
+# train_cases = set(df_train['caseid'].unique())
+# test_cases  = set(df_test['caseid'].unique())
+# overlap = train_cases.intersection(test_cases)
+# print(f"Overlapping caseids (should be 0): {len(overlap)}")
+# if overlap:
+#     print("Leakage confirmed! Examples:", list(overlap)[:5])
 
-# 2. Duplicates in flattened PPG vectors (per case)
-dup_check_cols = [f'ppg_{i}' for i in range(100)]
-print("Total duplicate rows (exact PPG match):", bg_df.duplicated(subset=dup_check_cols).sum())
-print("Duplicate rows per case sample:", bg_df.groupby('caseid')[dup_check_cols].apply(lambda g: g.duplicated().sum()).mean())
+# # 2. Duplicates in flattened PPG vectors (per case)
+# dup_check_cols = [f'ppg_{i}' for i in range(100)]
+# print("Total duplicate rows (exact PPG match):", bg_df.duplicated(subset=dup_check_cols).sum())
+# print("Duplicate rows per case sample:", bg_df.groupby('caseid')[dup_check_cols].apply(lambda g: g.duplicated().sum()).mean())
 
-# 3. Unique PPG patterns per case
-unique_per_case = bg_df.groupby('caseid')[dup_check_cols].nunique().mean(axis=1).mean()
-print("Average unique 1-s windows per case:", unique_per_case)  # should be low if redundant
+# # 3. Unique PPG patterns per case
+# unique_per_case = bg_df.groupby('caseid')[dup_check_cols].nunique().mean(axis=1).mean()
+# print("Average unique 1-s windows per case:", unique_per_case)  # should be low if redundant
 
-# 4. Test set glucose distribution vs full
-print("Test gluc mean/std:", y_test.mean(), y_test.std())
-print("Full gluc mean/std:", bg_df['gluc'].mean(), bg_df['gluc'].std())
+# # 4. Test set glucose distribution vs full
+# print("Test gluc mean/std:", y_test.mean(), y_test.std())
+# print("Full gluc mean/std:", bg_df['gluc'].mean(), bg_df['gluc'].std())
 
-exit()
+# exit()
 
 
 # Train model

@@ -1,6 +1,6 @@
 # This script processes VitalDB glucose lab measurements and matches them to +/- 8 min windows of PPG data,
 # following the Zeynali et al. (2025) methodology: downsampling, filtering, 10-s coarse segmentation,
-# peak-centered 1-s fine segmentation with quality filtering, normalization, and flattening for MLP input.
+# peak-centered 1-s fine segmentation with stricter quality filtering, normalization, and flattening for MLP input.
 import pandas as pd
 import vitaldb
 import os
@@ -18,7 +18,7 @@ df_cases = pd.read_csv(VITALDB_DATA_URL)
 # Output files
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-OUTPUT_FILE = os.path.join(PROJECT_ROOT, "vitaldb_1s_ppg_segments_flattened.csv")
+OUTPUT_FILE = os.path.join("./processed_data", "vitaldb_1s_ppg_segments_flattened_clean.csv")
 
 # Processing parameters
 PPG_SIGNAL_NAME = 'SNUADC/PLETH'
@@ -32,7 +32,8 @@ COARSE_SEGMENT_SEC = 10              # 10-second chunks
 FINE_WINDOW_SEC = 1                  # 1-second final windows
 SAMPLES_PER_FINE_WINDOW = TARGET_SAMPLE_RATE_HZ * FINE_WINDOW_SEC  # 100 samples
 
-COSINE_SIMILARITY_THRESHOLD = 0.85   # paper uses >= 85%
+COSINE_SIMILARITY_THRESHOLD = 0.92   # stricter than 0.85 — better quality, fewer noisy/redundant pulses
+MAX_GOOD_WINDOWS_PER_COARSE = 30     # hard cap to prevent explosion when many peaks pass
 BATCH_SIZE = 50                      # cases to accumulate before writing to CSV
 
 # --- UTILITY FUNCTIONS ---
@@ -154,13 +155,12 @@ for caseid in caseids_to_process:
             coarse_end = coarse_start + samples_per_coarse
             coarse_segment = filtered_ppg[coarse_start:coarse_end]
 
-            # Peak detection on this 10-s segment
-            # Height threshold: use 20th percentile to avoid very small bumps
-            height_thresh = np.percentile(np.abs(coarse_segment), 20)
+            # Peak detection — stricter thresholds to reduce redundancy
+            height_thresh = np.percentile(np.abs(coarse_segment), 40)   # was 20 — filters more noise
             peaks, _ = find_peaks(
                 coarse_segment,
                 height=height_thresh,
-                distance=TARGET_SAMPLE_RATE_HZ * 0.4   # min distance ~0.4 s
+                distance=TARGET_SAMPLE_RATE_HZ * 0.6   # was 0.4 — min ~0.6 s between peaks
             )
 
             if len(peaks) == 0:
@@ -182,12 +182,18 @@ for caseid in caseids_to_process:
             # Compute template = mean of all candidate windows in this coarse segment
             template = np.mean(candidate_windows, axis=0)
 
-            # Quality filter: keep only windows with cosine similarity >= 0.85 to template
+            # Quality filter: stricter threshold
             good_windows = []
             for w in candidate_windows:
                 sim = cosine_similarity(w, template)
                 if sim >= COSINE_SIMILARITY_THRESHOLD:
                     good_windows.append(w)
+
+            # Cap number of good windows per 10-s segment to avoid redundancy explosion
+            if len(good_windows) > MAX_GOOD_WINDOWS_PER_COARSE:
+                # Randomly subsample to cap (could also sort by similarity and take top N)
+                np.random.shuffle(good_windows)
+                good_windows = good_windows[:MAX_GOOD_WINDOWS_PER_COARSE]
 
             # Normalize and flatten good windows
             for w in good_windows:
@@ -209,7 +215,7 @@ for caseid in caseids_to_process:
                 all_segments.append(row)
 
     # Batch write to CSV
-    if len(all_segments) >= BATCH_SIZE * 100:  # rough heuristic: ~100 segments per glucose reading
+    if len(all_segments) >= BATCH_SIZE * 50:  # adjusted heuristic (fewer segments expected now)
         batch_df = pd.DataFrame(all_segments)
         output_file_exists = os.path.exists(OUTPUT_FILE)
         header = not output_file_exists
@@ -225,4 +231,12 @@ if all_segments:
     batch_df.to_csv(OUTPUT_FILE, mode='a', header=header, index=False)
     print(f"Final write: saved {len(batch_df)} remaining 1-s segments to {OUTPUT_FILE}")
 
-print(f"\nProcessing complete. All 1-second flattened PPG segments saved to {OUTPUT_FILE}.")
+# Optional: final dataset-level deduplication (safety net)
+print("Performing final dataset-level deduplication...")
+full_df = pd.read_csv(OUTPUT_FILE)
+ppg_cols = [f'ppg_{i}' for i in range(100)]
+full_df = full_df.drop_duplicates(subset=ppg_cols, keep='first')
+full_df.to_csv(OUTPUT_FILE, index=False)
+print(f"After deduplication: {len(full_df)} rows remain.")
+
+print(f"\nProcessing complete. Cleaned 1-second flattened PPG segments saved to {OUTPUT_FILE}.")
