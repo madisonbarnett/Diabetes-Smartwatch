@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split, GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
+import matplotlib.pyplot as plt
 from helper_scripts.cega import cega
 import time
 
@@ -18,6 +19,7 @@ GLUC = 'gluc' if DATASET == 'vitaldb' else 'glucose_mg_dl'  # Target variable
 ID = 'caseid' if DATASET == 'vitaldb' else 'patient_id'      # Grouping variable to prevent data leakage
 SUFFIX        = '15s'
 FEATURES = 'important' # 'all' or 'important'
+RANDOM_STATE = 20 # [15, 20, 30, 42, 50]
 
 # Load dataset into dataframe
 bg_df = pd.read_csv(DATAFILE)
@@ -25,7 +27,7 @@ print(f"Successfully loaded data from {DATASET} (shape: {bg_df.shape})")
 groups = bg_df[ID].values
 
 # Split into train+val and test  
-gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=RANDOM_STATE)
 train_idx, test_idx = next(gss.split(bg_df, groups=groups))
 
 df_train  = bg_df.iloc[train_idx].copy()
@@ -88,7 +90,7 @@ print(f"Testing samples:  {X_test_scaled.shape[0]}")
 print("Splitting training data into actual train + validation sets...")
 
 # Split training into actual train + validation (val used for representative data set during quantization)
-gss_val = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+gss_val = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=RANDOM_STATE)
 train_actual_idx, val_idx = next(gss_val.split(
     X_train_scaled, 
     groups=df_train[ID].values
@@ -251,8 +253,57 @@ print("="*60)
 print("\nGenerating Clarke Error Grid Analysis plot...")
 cega(y_test, y_pred)
 
-print("Exiting for now. Comment this out later to quantize and save the model!")
-exit()
+# ----- Plots -----
+print("\nGenerating diagnostic plots...")
+
+# 1. Training and Validation Loss / MAE curves
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.plot(history.history['loss'], label='Train Loss (MAE)')
+plt.plot(history.history['val_loss'], label='Val Loss (MAE)')
+plt.title('Training and Validation Loss')
+plt.xlabel('Epoch')
+plt.ylabel('MAE (mg/dL)')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+plt.subplot(1, 2, 2)
+plt.plot(history.history['mae'], label='Train MAE')
+plt.plot(history.history['val_mae'], label='Val MAE')
+plt.title('Training and Validation MAE')
+plt.xlabel('Epoch')
+plt.ylabel('MAE (mg/dL)')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# 2. Test set: Actual vs Predicted scatter
+plt.figure(figsize=(10, 8))
+
+# Scatter with alpha for density + color by absolute error
+abs_error = np.abs(y_test - y_pred)
+scatter = plt.scatter(y_test, y_pred, c=abs_error, cmap='viridis_r', alpha=0.6, s=40, edgecolor='none')
+
+plt.plot([0, 500], [0, 500], 'r--', lw=2, label='Perfect prediction (y=x)')
+plt.colorbar(scatter, label='Absolute Error (mg/dL)')
+
+plt.title('Test Set: Actual vs Predicted Blood Glucose')
+plt.xlabel('Actual Glucose (mg/dL)')
+plt.ylabel('Predicted Glucose (mg/dL)')
+plt.xlim(0, max(500, y_test.max() * 1.1))
+plt.ylim(0, max(500, y_pred.max() * 1.1))
+plt.grid(True, alpha=0.3)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+print("Plots generated.")
+
+# print("Exiting for now. Comment this out later to quantize and save the model!")
+# exit()
 
 # # Save trained model
 # model.save(f"model_weights/mlp_{SUFFIX}_{DATASET}.keras")
