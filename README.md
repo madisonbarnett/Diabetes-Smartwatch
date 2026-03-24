@@ -85,10 +85,12 @@ What `mlp.py` currently does:
 
 - Loads `processed_data/new_vitaldb_ppg_extracted_features_15s_5minwin.csv`.
 - Uses group-aware splitting by `caseid` (prevents patient leakage).
-- Trains a dense MLP with batch normalization + dropout.
-- Predicts log-transformed glucose target and inverts to mg/dL.
+- Trains a dense MLP with batch normalization + dropout on 12 most important features.
+- Predicts glucose target in mg/dL.
 - Reports `R^2`, MAE, MAPE on held-out test patients.
 - Generates Clarke Error Grid plot via `helper_scripts/cega.py`.
+- Quantizes and saves .tflite model (ready for conversion to C).
+
 
 Important note: `mlp.py` currently contains an explicit `exit()` right after CEGA plotting, so the quantization/export block below that line will not run unless you remove/comment out the `exit()` call.
 
@@ -125,4 +127,9 @@ git lfs pull
 2. Train/evaluate with `mlp.py`.
 3. Inspect CEGA and standard regression metrics.
 4. If deployment is needed, remove `exit()` in `mlp.py` and run quantization/export.
+5. Convert .tflite model to C header file using:
+```bash
+xxd -i {TFLITE_MODEL} > mlp.h
+```
+
 
