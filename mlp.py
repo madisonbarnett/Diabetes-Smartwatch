@@ -79,6 +79,17 @@ y_train  = df_train[GLUC].values.astype(np.float32)
 X_test = df_test[features].values.astype(np.float32)
 y_test = df_test[GLUC].values.astype(np.float32)
 
+# Create a clean output DataFrame for the test set (used for future isolated testing)
+output_cols = [ID] + [GLUC] + features
+df_test_output = df_test[output_cols].copy()
+
+# Optional: Add the numpy arrays as extra columns if you want to verify
+# df_test_output['GLUC_pred'] = y_test   # rename if you later add predictions
+
+# Save to CSV
+df_test_output.to_csv('test_set.csv', index=False)
+exit()
+
 # Scale only on training set
 scaler = StandardScaler()
 X_train_scaled  = scaler.fit_transform(X_train)
