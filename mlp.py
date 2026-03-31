@@ -88,7 +88,6 @@ df_test_output = df_test[output_cols].copy()
 
 # Save to CSV
 df_test_output.to_csv('test_set.csv', index=False)
-exit()
 
 # Scale only on training set
 scaler = StandardScaler()
@@ -252,7 +251,7 @@ print(f"    MAE : {mae_test:.2f} mg/dL")
 print(f"    MAPE: {mape_test:.2f}%")
 print("="*60)
 
-# # Optional: quick comparison table
+# Optional: quick comparison table
 # import pandas as pd
 # results_df = pd.DataFrame({
 #     'Actual': y_test,
@@ -317,13 +316,13 @@ print("\nGenerating diagnostic plots...")
 # exit()
 
 # # Save trained model
-# model.save(f"model_weights/mlp_{SUFFIX}_{DATASET}.keras")
-# print(f"Keras model saved as mlp_{SUFFIX}_{DATASET}.keras")
+model.save(f"model_weights/mlp.keras")
+print(f"Keras model saved as mlp.keras")
 
-# # Save scalers
-# import joblib
-# joblib.dump(scaler, f"model_weights/mlp_feature_scaler_{SUFFIX}_{DATASET}.pkl")
-# print(f"Feature scaler saved as feature_scaler_{SUFFIX}_{DATASET}.pkl")
+# Save scalers
+import joblib
+joblib.dump(scaler, f"model_weights/mlp_scalers.pkl")
+print(f"Feature scaler saved as mlp_scalers.pkl")
 
 # Convert model (not scalers yet) to C
 # import emlearn
