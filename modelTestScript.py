@@ -6,6 +6,7 @@ import time
 import re
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
 from pathlib import Path
+from helper_scripts.cega import cega
 
 def run_keras_inference(model, X_test, scaler=None):
     """Run inference with the original Keras model (float32)."""
@@ -207,6 +208,7 @@ def main():
         print(f"    R²   : {r2:.3f}")
         print(f"    MAE  : {mae:.2f} mg/dL")
         print(f"    MAPE : {mape:.2f}%")
+        cega(y_actual, y_pred)
 
     print_metrics("Keras (float32)", y_pred_keras)
     print_metrics("TFLite (int8)", y_pred_tflite)
