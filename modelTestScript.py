@@ -2,77 +2,87 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import joblib
-from pathlib import Path
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import r2_score, mean_absolute_percentage_error
 import time
-
-def test_model(model, df_test, row_index, features, scaler, id_col, target_col):                 
-    row_df = df_test.iloc[[row_index]]
-    # print(f"Testing row index: {row_index}")
-    # print(f"Case ID: {row_df[id_col].iloc[0]}")
-    # print(f"Actual {target_col}: {row_df[target_col].iloc[0]}")
-
-    # Select only the features (in correct order!)
-    exclude = [id_col, target_col]
-    features = [col for col in df_test.columns if col not in exclude]
-    
-    X_row = row_df[features].values.astype(np.float32)
-    actual = row_df[target_col].iloc[0]
-
-    # Apply scaling if you used a scaler during training
-    if scaler is not None:
-        X_row = scaler.transform(X_row)  
-        # print("Applied scaling to the row")
-
-    y_pred = model.predict(X_row, verbose=0).flatten()[0]
-    error = abs(y_pred - actual)
-    
-    # print(f"Predicted {target_col.upper():<6}: {y_pred:.4f}")
-    # print(f"Abs Error         : {error:.4f}")
-    # print(f"{'='*65}")
-    
-    return y_pred, actual
-
+from sklearn.metrics import r2_score, mean_absolute_percentage_error
+from pathlib import Path
 
 def main():
     MODELPATH = './model_weights/mlp.keras'
     SCALERPATH = './model_weights/mlp_scalers.pkl'
     TESTPATH = 'test_set.csv'
+    OUTPUT_CSV = 'test_predictions.csv'   # <-- New: where results will be saved
 
-    # Load model
+    # Load model and scaler
+    print("Loading model and scaler...")
     model = tf.keras.models.load_model(MODELPATH)
     scaler = joblib.load(SCALERPATH)
+
+    # Load test set efficiently
+    print("Loading test set...")
+    start_time = time.time()
     
-    # Load the full test set
-    df_test = pd.read_csv(TESTPATH)
+    # Read only needed columns with proper dtypes for speed
+    df_test = pd.read_csv(TESTPATH, dtype='float32')
+    
+    load_time = time.time() - start_time
+    print(f"Test set loaded: {len(df_test)} rows in {load_time:.2f} seconds")
 
-    pred_list = []
-    actual_list = []
+    # Define columns
+    id_col = 'caseid'
+    target_col = 'gluc'
+    features = [col for col in df_test.columns if col not in [id_col, target_col]]
 
-    start = time.time()
-    for i in range(1, 29319):
-        print(f'Running model test {i}')
-        y_pred, actual = test_model(model, df_test, i, df_test.columns, scaler, 'caseid', 'gluc')
-        pred_list.append(y_pred)
-        actual_list.append(actual)
+    # Prepare data
+    print("Preparing data...")
+    X_test = df_test[features].values.astype(np.float32)
+    y_actual = df_test[target_col].values.astype(np.float32)
+    case_ids = df_test[id_col].values   # Keep original case IDs
 
-    end = time.time()
-    print(f'Model tests complete. Took {end - start} seconds.')
+    # Apply scaling
+    if scaler is not None:
+        print("Applying scaler to test set...")
+        X_test = scaler.transform(X_test)
 
-    pred_array = np.array(pred_list)
-    actual_array = np.array(actual_list)
+    # Make predictions on the entire set at once
+    print("Running predictions...")
+    start_pred = time.time()
+    y_pred = model.predict(X_test, batch_size=2048, verbose=1).flatten()
+    pred_time = time.time() - start_pred
+    print(f"Predictions done in {pred_time:.2f} seconds")
 
-    r2_test = r2_score(actual_array, pred_array)
-    mae_test = np.mean(np.abs(actual_array - pred_array))
-    mape_test = mean_absolute_percentage_error(actual_array, pred_array) * 100
+    # Calculate overall metrics
+    r2_test = r2_score(y_actual, y_pred)
+    mae_test = np.mean(np.abs(y_actual - y_pred))
+    mape_test = mean_absolute_percentage_error(y_actual, y_pred) * 100
 
-    print("\n" + "="*60)
-    print(f"MLP results on TEST set:")
-    print(f"    R²  : {r2_test:.3f}")
-    print(f"    MAE : {mae_test:.2f} mg/dL")
-    print(f"    MAPE: {mape_test:.2f}%")
-    print("="*60)
+    # Create results DataFrame and save to CSV
+    print(f"Saving predictions to '{OUTPUT_CSV}'...")
+    results_df = pd.DataFrame({
+        'caseid': case_ids,
+        'actual_gluc': y_actual,
+        'predicted_gluc': y_pred,
+        'absolute_error': np.abs(y_actual - y_pred)
+    })
+    
+    # Optional: round for nicer reading in Excel
+    results_df['predicted_gluc'] = results_df['predicted_gluc'].round(4)
+    results_df['absolute_error'] = results_df['absolute_error'].round(4)
+    
+    results_df.to_csv(OUTPUT_CSV, index=False)
+    print(f"Predictions saved successfully! ({len(results_df)} rows)")
+
+    # Print summary
+    total_time = time.time() - start_time
+    print("\n" + "="*70)
+    print(f"MLP results on TEST set ({len(df_test)} samples):")
+    print(f"    R²          : {r2_test:.3f}")
+    print(f"    MAE         : {mae_test:.2f} mg/dL")
+    print(f"    MAPE        : {mape_test:.2f}%")
+    print(f"    Total time  : {total_time:.1f} seconds")
+    print("="*70)
+    print(f"Output file: {OUTPUT_CSV}")
+    print("You can now open this CSV to compare actual vs predicted values row by row.")
+
 
 if __name__ == "__main__":
     main()
