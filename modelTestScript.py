@@ -152,7 +152,7 @@ def main():
     TESTPATH = 'test_set.csv'
     
     TFLITE_PATH = './model_weights/mlp_int8.tflite'
-    C_HEADER_PATH = 'mlp.h'          # <-- Your C header file
+    C_HEADER_PATH = './model_weights/mlp.h'          # <-- Your C header file
 
     # ===========================================
 
