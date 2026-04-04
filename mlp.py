@@ -359,7 +359,7 @@ converter.representative_dataset = representative_dataset
 tflite_model = converter.convert()
 
 # Save quantized model
-OUTFILE = f'model_weights/mlp_{SUFFIX}_{DATASET}_int8.tflite'
+OUTFILE = f'model_weights/mlp_int8.tflite'
 with open(OUTFILE, "wb") as f:
     f.write(tflite_model)
 
