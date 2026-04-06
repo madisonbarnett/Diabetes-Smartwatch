@@ -70,6 +70,9 @@ Important note: When attempting to run some old models import directories may ne
 - `helper_scripts/cega.py`: Clarke Error Grid Analysis (zone stats + plot/save utilities).
 - `helper_scripts/featureAnalysis.py`: Feature correlation and glucose distribution analysis on VitalDB feature tables.
 - `helper_scripts/physioFeatureAnalysis.py`: Similar feature analysis for PhysioNet table.
+- `helper_scripts/compile_example_rows.py`: Builds a 20-row example CSV from `processed_data/new_vitaldb_ppg_extracted_features_15s_5minwin.csv` using random input rows from 20 unique `caseid` patients.
+- `helper_scripts/modelExampleEntriesTest.py`: Runs float32, int8 TFLite, and C-header inference on `vitaldb_20_example_rows.csv` and compares predictions to the row-level `gluc` values.
+- `helper_scripts/averageErrorExtractor.py`: Adds percent-error columns to a model comparison CSV and prints the mean absolute and mean percent errors for each inference path.
 - `helper_scripts/quantizeModel.py`: Converts a saved Keras model to quantized TFLite.
 - `helper_scripts/convertToC.py`: Converts a trained sklearn model (`.pkl`) to embedded C/header via `emlearn`.
 
@@ -89,10 +92,110 @@ What `mlp.py` currently does:
 - Predicts glucose target in mg/dL.
 - Reports `R^2`, MAE, MAPE on held-out test patients.
 - Generates Clarke Error Grid plot via `helper_scripts/cega.py`.
-- Quantizes and saves .tflite model (ready for conversion to C).
+- Saves `model_weights/mlp.keras` and `model_weights/mlp_scalers.pkl`.
+- Quantizes and saves `model_weights/mlp_int8.tflite` (ready for conversion to C).
 
+## Model evaluation scripts
 
-Important note: `mlp.py` currently contains an explicit `exit()` right after CEGA plotting, so the quantization/export block below that line will not run unless you remove/comment out the `exit()` call.
+### Full held-out test set comparison
+
+Run from repository root:
+
+```bash
+python modelTestScript.py
+```
+
+This script loads:
+
+- `model_weights/mlp.keras`
+- `model_weights/mlp_scalers.pkl`
+- `model_weights/mlp_int8.tflite`
+- `model_weights/mlp.h`
+- `test_set.csv`
+
+It evaluates all three inference paths:
+
+- Keras float32
+- TFLite int8
+- C-header / embedded-equivalent int8
+
+It writes `test_predictions_comparison.csv`, which includes:
+
+- `caseid`
+- `actual_gluc`
+- all three predictions
+- `error_keras`
+- `error_tflite`
+- `error_c_header`
+
+### Build 20 example entries
+
+Run from repository root:
+
+```bash
+python helper_scripts/compile_example_rows.py
+```
+
+This creates `vitaldb_20_example_rows.csv` by:
+
+- reading `processed_data/new_vitaldb_ppg_extracted_features_15s_5minwin.csv`
+- selecting the first available row for each unique `caseid`
+- keeping the first 20 unique-case rows
+- exporting only:
+  - `gluc`
+  - `age`
+  - `weight`
+  - `height`
+  - `preop_dm`
+  - `ppg_mean_pp_interval_s`
+  - `ppg_std`
+  - `ppg_teager_energy`
+  - `ppg_skew`
+  - `ppg_iqr`
+  - `ppg_entropy`
+  - `ppg_first_deriv_max`
+  - `ppg_std_pp_interval_s`
+
+### Test on the 20 example entries
+
+Run from repository root:
+
+```bash
+python helper_scripts/modelExampleEntriesTest.py
+```
+
+This script compares float32, int8 TFLite, and C-header predictions against the `gluc` value in each row of `vitaldb_20_example_rows.csv`.
+
+It writes `example_entries_predictions_comparison.csv`, which includes:
+
+- `example_row`
+- `actual_gluc`
+- all three predictions
+- `error_keras`
+- `error_tflite`
+- `error_c_header`
+
+### Summarize average error and percent error
+
+Run from repository root:
+
+```bash
+python helper_scripts/averageErrorExtractor.py
+```
+
+By default this script reads `test_predictions_comparison.csv`, adds:
+
+- `percent_error_keras`
+- `percent_error_tflite`
+- `percent_error_c_header`
+
+and then prints the mean of both the absolute-error and percent-error columns. Percent error is computed as:
+
+```text
+abs(predicted - actual_gluc) / actual_gluc * 100
+```
+
+If you want to summarize `example_entries_predictions_comparison.csv` instead, update `TESTPATH` in `helper_scripts/averageErrorExtractor.py`.
 
 ## Dependencies
 
@@ -125,9 +228,11 @@ git lfs pull
 
 1. Use or regenerate `processed_data/new_vitaldb_ppg_extracted_features_15s_5minwin.csv`.
 2. Train/evaluate with `mlp.py`.
-3. Inspect CEGA and standard regression metrics.
-4. If deployment is needed, remove `exit()` in `mlp.py` and run quantization/export.
-5. Convert .tflite model to C header file using:
+3. Run `python modelTestScript.py` to compare the float32, int8, and C-header models on the held-out test set.
+4. Optionally run `python helper_scripts/compile_example_rows.py` and `python helper_scripts/modelExampleEntriesTest.py` for a small hand-checkable example set.
+5. Run `python helper_scripts/averageErrorExtractor.py` to append percent errors and summarize mean error values.
+6. Inspect CEGA and standard regression metrics.
+7. Convert .tflite model to C header file using:
 ```bash
 xxd -i {TFLITE_MODEL} > mlp.h
 ```
