@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 SOURCE_CSV = Path("processed_data/new_vitaldb_ppg_extracted_features_15s_5minwin.csv")
-OUTPUT_CSV = Path("vitaldb_20_example_rows.csv")
+OUTPUT_CSV = Path("vitaldb_100_example_rows.csv")
 CASE_ID_COLUMN = "caseid"
 FEATURE_COLUMNS = [
     "gluc",
@@ -20,7 +20,7 @@ FEATURE_COLUMNS = [
     "ppg_first_deriv_max",
     "ppg_std_pp_interval_s",
 ]
-NUM_EXAMPLES = 20
+NUM_EXAMPLES = 100
 
 
 def main() -> None:
