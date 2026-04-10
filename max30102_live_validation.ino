@@ -20,6 +20,7 @@ float P2PTime_Array[MAX_SAMPLES];
 
 static float norm_ir[MAX_SAMPLES];
 static float sort_buf[MAX_SAMPLES];
+static float psd_buf[MAX_SAMPLES / 2 + 1]; // static PSD buffer, no heap alloc
 
 int i = 0;
 int p = 0;
@@ -44,17 +45,18 @@ float percentile_interp(float *arr, int n, float pct) {
   return arr[lo] + frac * (arr[hi] - arr[lo]);
 }
 
+// Insertion sort — much faster than bubble sort in practice
 void sort_copy(float *src, float *dst, int n) {
   for (int j = 0; j < n; j++) dst[j] = src[j];
 
-  for (int a = 0; a < n - 1; a++) {
-    for (int b = a + 1; b < n; b++) {
-      if (dst[b] < dst[a]) {
-        float t = dst[a];
-        dst[a] = dst[b];
-        dst[b] = t;
-      }
+  for (int a = 1; a < n; a++) {
+    float key = dst[a];
+    int b = a - 1;
+    while (b >= 0 && dst[b] > key) {
+      dst[b + 1] = dst[b];
+      b--;
     }
+    dst[b + 1] = key;
   }
 }
 
@@ -169,38 +171,37 @@ void FFT_SPECTRAL_ENTROPY() {
     return;
   }
 
-  int n_bins = i / 2 + 1;
-  float *psd = new float[n_bins];
-  if (!psd) {
-    spectral_entropy = 0;
-    return;
-  }
+  // Only compute bins covering the physiologically relevant PPG band: 0.5–4 Hz
+  // At 100 Hz with i samples: bin k corresponds to frequency k * (100 / i) Hz
+  int k_min = (int)(0.5f * (float)i / (float)SAMPLE_RATE_HZ);
+  int k_max = (int)(4.0f * (float)i / (float)SAMPLE_RATE_HZ) + 1;
+  if (k_max > i / 2 + 1) k_max = i / 2 + 1;
 
-  for (int k = 0; k < n_bins; k++) {
-    double real = 0.0;
-    double imag = 0.0;
+  int n_bins = k_max - k_min;
+
+  // Use static buffer — no heap allocation
+  for (int k = k_min; k < k_max; k++) {
+    float real = 0.0f, imag = 0.0f;
 
     for (int t = 0; t < i; t++) {
-      double ang = 2.0 * PI * (double)k * (double)t / (double)i;
-      real += (double)norm_ir[t] * cos(ang);
-      imag -= (double)norm_ir[t] * sin(ang);
+      float ang = 2.0f * PI * (float)k * (float)t / (float)i;
+      real += norm_ir[t] * cosf(ang);   // float cosf/sinf, not double cos/sin
+      imag -= norm_ir[t] * sinf(ang);
     }
 
-    psd[k] = (float)(real * real + imag * imag);
+    psd_buf[k - k_min] = real * real + imag * imag;
   }
 
   float psd_sum = 0;
-  for (int k = 0; k < n_bins; k++) psd_sum += psd[k];
+  for (int k = 0; k < n_bins; k++) psd_sum += psd_buf[k];
 
   spectral_entropy = 0;
   if (psd_sum > 0) {
     for (int k = 0; k < n_bins; k++) {
-      float pwr = psd[k] / psd_sum;
-      if (pwr > 0) spectral_entropy -= pwr * log(pwr);
+      float pwr = psd_buf[k] / psd_sum;
+      if (pwr > 0) spectral_entropy -= pwr * logf(pwr);
     }
   }
-
-  delete[] psd;
 }
 
 void PEAK_INTERVAL_FEATURES() {
@@ -344,3 +345,4 @@ void loop() {
     }
   }
 }
+
