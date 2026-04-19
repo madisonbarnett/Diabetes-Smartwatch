@@ -2,7 +2,7 @@
 *  Full code for Diabetes Smartwatch for Blood Glucose Estimation completed for ECE 492/494 in Spring 2026
 *  at the University of Alabama by Madison Barnett, Tyler Bish, Hunter Enders, Joseph Gillett, and Alex Mai
 *
-*  All final documentation can be found at: https://bama365-my.sharepoint.com/personal/dadiggs1_crimson_ua_edu/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fdadiggs1%5Fcrimson%5Fua%5Fedu%2FDocuments%2FSmartwatch%20Project%20%28Destinie%20Diggs%29%2FResources%20for%20Capstone%20Group%2F494%2DFinal%20Documentation&viewid=94ba8a48%2Df81b%2D469b%2Dbec8%2D10cddf465abf
+*  All final documentation can be found at: https://bama365-my.sharepoint.com/:f:/g/personal/dadiggs1_crimson_ua_edu/IgDs5xk_lUzRS4-OxSFEoNXOAexQJOi1CbhkBeupjfUzxS4?e=u0exuN
 *  GITHUB Link: https://github.com/madisonbarnett/Diabetes-Smartwatch
 *
 *  This code is designed to run on an ESP32 PICO KIT 1 using the Arduino IDE with version 2.0.16 of the esp32 by Espressif Systems board installed.
