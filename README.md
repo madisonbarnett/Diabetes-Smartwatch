@@ -2,7 +2,7 @@
 This is the current code for the embedded side of the Non-Invasive Glucose Monitoring smartwatch
 
 # Current Full Code for the Smartwatch
-- `Fullcode4-15.ino`: This is the latest full code for the Smartwatch
+- `FullCodeV1\DiabetesSmartwatch.ino`: This is the latest full code for the Smartwatch
 
 # Current Sample Implementation
 - `max30102_live_validation`: This is the current sample code for the smartwatch
