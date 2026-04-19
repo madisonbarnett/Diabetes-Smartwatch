@@ -2,7 +2,7 @@
 This is the current code for the embedded side of the Non-Invasive Glucose Monitoring smartwatch
 
 # Current Full Code for the Smartwatch
-- `FullCodeV1\DiabetesSmartwatch.ino`: This is the latest full code for the Smartwatch
+- `FinalCodeV1\DiabetesSmartwatch.ino`: This is the latest full code for the Smartwatch
 
 # Current Sample Implementation
 - `max30102_live_validation`: This is the current sample code for the smartwatch
@@ -15,6 +15,7 @@ Important note: This code uses 59 frequency bins from .5-4Hz for the DFT. A larg
   - The order is as follows to configure the screen
     - Documents -> Arduino-> Librariers -> TFT_eSPI -> User Setup uses GC9A01 Driver
     - Pins must be configured in the user setup using the wiring diagram
+    - Example: `FinalCodeV1\User_Setup.h`
 
 # On-Device AI testing 
 - `AI_Test`: Has the basic implementation of any AI model; for different models will need to change the model header
