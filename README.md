@@ -1,8 +1,11 @@
 # Diabetes-Smartwatch-Embedded
 This is the current code for the embedded side of the Non-Invasive Glucose Monitoring smartwatch
 
-# Current Full Code for the Smartwatch
+# Current Full Code for the Smartwatch V1
 - `FinalCodeV1\DiabetesSmartwatch.ino`: This is the latest full code for the Smartwatch
+  
+# Current Full Code for the Smartwatch V2
+- `finalcodev2/finalcodev2.ino`: This is the latest full code for the Smartwatch V2 with Embedded PCB
 
 # Current Sample Implementation
 - `max30102_live_validation`: This is the current sample code for the smartwatch
