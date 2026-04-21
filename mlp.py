@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split, GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
 import matplotlib.pyplot as plt
-from helper_scripts.cega import cega
+from helper_scripts.cega import cega, cega_download
 import time
 
 import tensorflow as tf
@@ -259,6 +259,10 @@ print("="*60)
 # })
 # print(results_df.sample(12))
 
+# Download CEGA plot at 300 dpi for IEEE formatting
+CEGA_path = 'MLP_CEGA.png'
+cega_download(y_test, y_pred, CEGA_path)
+
 # Perform CEGA analysis and plot results
 print("\nGenerating Clarke Error Grid Analysis plot...")
 cega(y_test, y_pred)
@@ -267,16 +271,14 @@ cega(y_test, y_pred)
 print("\nGenerating diagnostic plots...")
 
 # 1. Training and Validation Loss / MAE curves
-# plt.figure(figsize=(12, 5))
-
-# plt.subplot(1, 2, 1)
-# plt.plot(history.history['loss'], label='Train Loss (MAE)')
-# plt.plot(history.history['val_loss'], label='Val Loss (MAE)')
-# plt.title('Training and Validation Loss')
-# plt.xlabel('Epoch')
-# plt.ylabel('MAE (mg/dL)')
-# plt.legend()
-# plt.grid(True, alpha=0.3)
+plt.figure(figsize=(6, 6))
+plt.plot(history.history['loss'], label='Train Loss (MAE)')
+plt.plot(history.history['val_loss'], label='Val Loss (MAE)')
+plt.title('Training and Validation Loss')
+plt.xlabel('Epoch')
+plt.ylabel('MAE (mg/dL)')
+plt.legend()
+plt.grid(True, alpha=0.3)
 
 # plt.subplot(1, 2, 2)
 # plt.plot(history.history['mae'], label='Train MAE')
@@ -287,8 +289,13 @@ print("\nGenerating diagnostic plots...")
 # plt.legend()
 # plt.grid(True, alpha=0.3)
 
-# plt.tight_layout()
-# plt.show()
+plt.tight_layout()
+
+Loss_path = 'MLP_Loss.png'
+
+plt.savefig(Loss_path, dpi=300, bbox_inches='tight', pad_inches=0.05)
+print(f"Saved CEGA plot to: {Loss_path}")
+plt.show()
 
 # # 2. Test set: Actual vs Predicted scatter
 # plt.figure(figsize=(10, 8))
@@ -313,7 +320,7 @@ print("\nGenerating diagnostic plots...")
 # print("Plots generated.")
 
 # print("Exiting for now. Comment this out later to quantize and save the model!")
-# exit()
+exit()
 
 # # Save trained model
 model.save(f"model_weights/mlp.keras")

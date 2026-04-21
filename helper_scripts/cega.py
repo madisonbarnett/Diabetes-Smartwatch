@@ -128,7 +128,7 @@ def cega_download(y_orig_test, y_pred, file_path, show_plot=False):
         print(f"Zone {zone}: {percentage:.2f}% ({count}/{total_points} points)")
 
     # Create plot
-    plt.figure(figsize=(10, 10))
+    plt.figure(figsize=(6, 6))
 
     # Define zone colors and labels
     colors = {'A': 'green', 'B': 'yellow', 'C': 'orange', 'D': 'red', 'E': 'purple'}
@@ -195,7 +195,7 @@ def cega_download(y_orig_test, y_pred, file_path, show_plot=False):
     plt.tight_layout()
 
     # Save plot to file_path
-    plt.savefig(file_path, bbox_inches='tight')
+    plt.savefig(file_path, dpi=300, bbox_inches='tight', pad_inches=0.05)
     print(f"Saved CEGA plot to: {file_path}")
 
     # Show plot if specified in parameters
